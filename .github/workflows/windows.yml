@@ -60,16 +60,16 @@ jobs:
           releaseBody: |
             OpenWallpaper Windows release.
 
-            Install the NSIS `.exe` installer or the WiX `.msi` package.
+            Install the NSIS `.exe` installer or the `.msi` package.
             Video/GIF/image/slideshow playback requires the separately installed libmpv runtime (`mpv-2.dll`).
             Read the README and SECURITY.md before use.
           releaseDraft: true
           prerelease: true
-          args: --bundles nsis,wix
+          args: --bundles nsis,msi
 
       - name: Build Windows bundles for manual/branch runs
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npm run tauri build -- --bundles nsis,wix
+        run: npm run tauri build -- --bundles nsis,msi
 
       - name: Upload Windows installers as workflow artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
