@@ -75,11 +75,16 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         shell: pwsh
         run: |
+          $log = Join-Path $env:TEMP 'openwallpaper-startup-error.log'
+          Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
           $app = Start-Process -FilePath 'src-tauri/target/release/openwallpaper.exe' -PassThru
           try {
             Start-Sleep -Seconds 10
             $app.Refresh()
-            if ($app.HasExited) { throw "OpenWallpaper exited during startup smoke test (code $($app.ExitCode))" }
+            if ($app.HasExited) {
+              $details = if (Test-Path -LiteralPath $log) { Get-Content -Raw -LiteralPath $log } else { 'No startup log was produced.' }
+              throw "OpenWallpaper exited during startup smoke test (code $($app.ExitCode)): $details"
+            }
           }
           finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
