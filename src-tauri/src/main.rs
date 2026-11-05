@@ -16,6 +16,10 @@ use tauri::{
 };
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let path = std::env::temp_dir().join("openwallpaper-startup-error.log");
+        let _ = std::fs::write(&path, format!("{info}\n"));
+    }));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -156,6 +160,10 @@ fn main() {
             commands::open_external_url
         ])
         .run(tauri::generate_context!())
-        .expect("OpenWallpaper failed to start");
+        .unwrap_or_else(|error| {
+            let path = std::env::temp_dir().join("openwallpaper-startup-error.log");
+            let _ = std::fs::write(&path, format!("OpenWallpaper failed to start: {error:#}\n"));
+            panic!("OpenWallpaper failed to start: {error:#}");
+        });
 }
 
