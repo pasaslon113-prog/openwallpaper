@@ -330,9 +330,13 @@ async function boot(): Promise<void> {
     await refresh();
     await listen<boolean>("ow:pause", (event) => { state.paused = event.payload; render(); });
     await listen<{ paused: boolean }>("ow:pause-state", (event) => { state.paused = event.payload.paused; render(); });
+    await listen<{ message: string }>("ow:restore-error", (event) => {
+      notify(`Не удалось восстановить обои: ${event.payload.message}`);
+    });
   } catch (error) {
     app.innerHTML = `<div class="startup-error"><h1>OpenWallpaper не смог запуститься</h1><p>${esc(error)}</p><p>Проверьте права приложения и перезапустите его.</p></div>`;
   }
 }
 
 void boot();
+
