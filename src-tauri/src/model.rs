@@ -42,7 +42,7 @@ pub struct WallpaperItem {
     pub file_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MonitorInfo {
     pub id: String,
     pub name: String,
@@ -222,3 +222,4 @@ mod tests {
         assert_eq!(normalized.game_processes, vec!["game.exe".to_string()]);
     }
 }
+

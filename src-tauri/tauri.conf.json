@@ -42,7 +42,7 @@
     "active": true,
     "targets": [
       "nsis",
-      "wix"
+      "msi"
     ],
     "category": "Utility",
     "shortDescription": "Lightweight live wallpapers for Windows",
@@ -53,10 +53,6 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "dialog": {
-      "all": true
-    }
   }
 }
+

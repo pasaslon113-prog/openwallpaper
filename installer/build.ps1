@@ -30,7 +30,7 @@ Pop-Location
 if ($testExit -ne 0) { throw 'Rust tests failed.' }
 
 Write-Host 'Building NSIS and MSI installers...' -ForegroundColor Cyan
-npm run tauri build -- --bundles nsis,wix
+npm run tauri build -- --bundles nsis,msi
 if ($LASTEXITCODE -ne 0) { throw 'Tauri packaging failed.' }
 
 $bundleRoot = Join-Path $PWD 'src-tauri/target/release/bundle'
@@ -40,3 +40,4 @@ if (-not $installers) { throw "No installers were produced under $bundleRoot" }
 Write-Host "`nInstallers created:" -ForegroundColor Green
 $installers | Select-Object -ExpandProperty FullName
 Write-Host "`nNote: media playback requires the separately obtained libmpv runtime (mpv-2.dll). HTML wallpapers do not require it." -ForegroundColor Yellow
+

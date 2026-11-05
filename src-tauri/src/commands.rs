@@ -349,10 +349,10 @@ fn build_runtime_wallpaper(item: &WallpaperItem, settings: &AppSettings, monitor
     })
 }
 
-fn monitors_for_app(app: &AppHandle) -> anyhow::Result<Vec<MonitorInfo>> {
+pub(crate) fn monitors_for_app(app: &AppHandle) -> anyhow::Result<Vec<MonitorInfo>> {
     let window = app.get_webview_window("main").ok_or_else(|| anyhow::anyhow!("Главное окно приложения недоступно"))?;
     let monitors = window.available_monitors()?;
-    let primary = window.primary_monitor()?.map(|m| m.position());
+    let primary = window.primary_monitor()?.map(|m| *m.position());
     Ok(monitors.into_iter().enumerate().map(|(index, monitor)| {
         let pos = monitor.position();
         let size = monitor.size();
@@ -366,9 +366,62 @@ fn monitors_for_app(app: &AppHandle) -> anyhow::Result<Vec<MonitorInfo>> {
             width: size.width,
             height: size.height,
             scale_factor: monitor.scale_factor(),
-            primary: primary.map(|p| p == pos).unwrap_or(index == 0),
+            primary: primary.map(|p| p == *pos).unwrap_or(index == 0),
         }
     }).collect())
+}
+
+pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<MonitorInfo>, current: Vec<MonitorInfo>) {
+    if current.is_empty() { return; }
+    let state = app.state::<AppState>();
+    let old_assignments = state.data.lock()
+        .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
+    if old_assignments.is_empty() { return; }
+
+    let assignments = remap_monitor_assignments(&previous, &current, &old_assignments);
+
+    for window in app.webview_windows().values() {
+        if window.label().starts_with("wallpaper-") { let _ = window.destroy(); }
+    }
+    if let Ok(mut players) = state.playback.lock() { players.clear(); }
+    if let Ok(mut data) = state.data.lock() { data.settings.monitor_wallpapers = assignments.clone(); }
+    let _ = state.save();
+
+    for (monitor_id, wallpaper_id) in assignments {
+        let state = app.state::<AppState>();
+        if let Err(error) = apply_wallpaper(app.clone(), state, wallpaper_id.clone(), monitor_id.clone()).await {
+            let _ = app.emit("ow:restore-error", serde_json::json!({
+                "wallpaperId": wallpaper_id,
+                "monitorId": monitor_id,
+                "message": error,
+            }));
+        }
+    }
+}
+
+fn monitor_distance_squared(a: &MonitorInfo, b: &MonitorInfo) -> i64 {
+    let ax = i64::from(a.x) + i64::from(a.width / 2);
+    let ay = i64::from(a.y) + i64::from(a.height / 2);
+    let bx = i64::from(b.x) + i64::from(b.width / 2);
+    let by = i64::from(b.y) + i64::from(b.height / 2);
+    (ax - bx).pow(2) + (ay - by).pow(2)
+}
+
+fn remap_monitor_assignments(
+    previous: &[MonitorInfo],
+    current: &[MonitorInfo],
+    old_assignments: &std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, String> {
+    let fallback = old_assignments.values().next().cloned();
+    current.iter().filter_map(|monitor| {
+        let wallpaper = if let Some(existing) = old_assignments.get(&monitor.id) {
+            Some(existing.clone())
+        } else {
+            previous.iter().min_by_key(|old| monitor_distance_squared(old, monitor))
+                .and_then(|old| old_assignments.get(&old.id)).cloned().or_else(|| fallback.clone())
+        }?;
+        Some((monitor.id.clone(), wallpaper))
+    }).collect()
 }
 
 fn wallpaper_window_label(monitor_id: &str) -> String {
@@ -420,4 +473,24 @@ mod tests {
         next.slideshow_seconds = 12;
         assert!(playback_timing_changed(&previous, &next));
     }
+
+    #[test]
+    fn monitor_matching_prefers_nearest_center_after_resolution_or_position_change() {
+        let old = MonitorInfo { id: "old".into(), name: "A".into(), x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: true };
+        let resized = MonitorInfo { id: "new".into(), name: "A".into(), x: 0, y: 0, width: 2560, height: 1440, scale_factor: 1.0, primary: true };
+        let distant = MonitorInfo { id: "far".into(), name: "B".into(), x: 4000, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: false };
+        assert!(monitor_distance_squared(&old, &resized) < monitor_distance_squared(&distant, &resized));
+    }
+
+    #[test]
+    fn monitor_assignments_survive_resolution_change_and_new_monitor_connection() {
+        let old = MonitorInfo { id: "old".into(), name: "A".into(), x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: true };
+        let resized = MonitorInfo { id: "new".into(), name: "A".into(), x: 0, y: 0, width: 2560, height: 1440, scale_factor: 1.0, primary: true };
+        let added = MonitorInfo { id: "added".into(), name: "B".into(), x: 2560, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: false };
+        let old_assignments = std::collections::HashMap::from([("old".into(), "wallpaper-1".into())]);
+        let mapped = remap_monitor_assignments(&[old], &[resized, added], &old_assignments);
+        assert_eq!(mapped.get("new").map(String::as_str), Some("wallpaper-1"));
+        assert_eq!(mapped.get("added").map(String::as_str), Some("wallpaper-1"));
+    }
 }
+

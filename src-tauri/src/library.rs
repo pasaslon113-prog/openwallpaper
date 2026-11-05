@@ -201,6 +201,7 @@ fn source_label(path: &Path) -> String {
     let text = path.to_string_lossy().to_lowercase();
     if text.contains("workshop") && text.contains("431960") { "Steam Workshop".into() }
     else if text.contains("wallpaper engine") || text.contains("wallpaper_engine") { "Wallpaper Engine".into() }
+    else if text.contains("openwallpaper originals") { "OpenWallpaper".into() }
     else { "Импортировано".into() }
 }
 
@@ -316,3 +317,4 @@ mod tests {
         assert_eq!(stable_id(p).len(), 20);
     }
 }
+
