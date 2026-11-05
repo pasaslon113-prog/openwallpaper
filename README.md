@@ -9,6 +9,7 @@ This repository does not contain Wallpaper Engine source code, proprietary asset
 - Local library scanner for MP4, WebM, MKV, MOV, AVI, GIF, PNG, JPEG, WebP and BMP.
 - HTML wallpaper folders (`index.html`) and user-supplied HTTP(S) web wallpapers.
 - Three original, animated HTML wallpapers are installed into the local library on first launch. They work without Steam, Wallpaper Engine, libmpv or an internet connection.
+- Pause/resume controls both native media playback and CSS animation in the bundled wallpapers.
 - First-frame previews for images and GIFs; video previews play only while the pointer is over a library card.
 - Folder-based slideshows: a directory with at least two supported still images is also exposed as a slideshow.
 - A clean-room `scene.json` layered-scene format (specification below).

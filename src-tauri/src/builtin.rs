@@ -9,6 +9,7 @@ const WALLPAPERS: &[(&str, &str)] = &[
     ("Orbital Garden", include_str!("../../public/wallpapers/orbital-garden/index.html")),
     ("Neon Rain", include_str!("../../public/wallpapers/neon-rain/index.html")),
 ];
+const PAUSE_CONTROL: &str = include_str!("../../public/wallpapers/control.js");
 
 pub fn install(app_data_dir: &Path) -> anyhow::Result<PathBuf> {
     let root = app_data_dir.join("wallpapers").join("OpenWallpaper Originals");
@@ -18,6 +19,10 @@ pub fn install(app_data_dir: &Path) -> anyhow::Result<PathBuf> {
         let entrypoint = folder.join("index.html");
         if !entrypoint.exists() {
             fs::write(entrypoint, html)?;
+        }
+        let pause_control = folder.join("control.js");
+        if !pause_control.exists() {
+            fs::write(pause_control, PAUSE_CONTROL)?;
         }
     }
     Ok(root)
@@ -58,6 +63,16 @@ mod tests {
         install(temp.path()).unwrap();
 
         assert_eq!(fs::read_to_string(custom).unwrap(), "user-edited wallpaper");
+    }
+
+    #[test]
+    fn installs_pause_control_for_each_builtin_wallpaper() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = install(temp.path()).unwrap();
+
+        for (name, _) in WALLPAPERS {
+            assert!(root.join(name).join("control.js").is_file());
+        }
     }
 
     #[test]

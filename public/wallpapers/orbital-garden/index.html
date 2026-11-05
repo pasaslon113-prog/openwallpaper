@@ -16,12 +16,13 @@
     .ring::before { content: ""; position: absolute; left: 50%; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #f6e1c4; box-shadow: 0 0 18px 5px #f4cf9e99; }
     .moon { position: absolute; width: 5.2vw; min-width: 38px; aspect-ratio: 1; left: 70%; top: 22%; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #e3e9f2, #8d9daf 47%, #46546e 72%, #18243b); box-shadow: 0 0 30px #a8c5f355; animation: moon 13s ease-in-out infinite alternate; }
     .glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 90%, #a3d5ff1a, transparent 40%); }
+    html[data-openwallpaper-paused="true"] *, html[data-openwallpaper-paused="true"] *::before, html[data-openwallpaper-paused="true"] *::after { animation-play-state: paused !important; }
     @keyframes orbit { to { transform: translate(-50%, -50%) rotate(343deg); } }
     @keyframes moon { to { transform: translate(-12px, 15px); } }
     @keyframes nebula { to { transform: translate(2%, -1%) scale(1.08); opacity: .72; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
   </style>
 </head>
-<body><div class="space"></div><div class="nebula"></div><div class="stars"></div><div class="ring"></div><div class="planet"></div><div class="moon"></div><div class="glow"></div></body>
+<body><div class="space"></div><div class="nebula"></div><div class="stars"></div><div class="ring"></div><div class="planet"></div><div class="moon"></div><div class="glow"></div><script src="./control.js" defer></script></body>
 </html>
 
