@@ -28,7 +28,6 @@ fn main() {
             {
                 let mut data = state.data.lock().map_err(|_| "state lock poisoned")?;
                 library::add_roots(&mut data, &discovered_roots)?;
-                library::scan_library(&mut data, &app_data.join("thumbnails"))?;
             }
             app.manage(state);
             {
@@ -78,19 +77,54 @@ fn main() {
             }
 
             let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let assignments = app_handle.state::<AppState>().data.lock()
-                    .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
-                for (monitor_id, wallpaper_id) in assignments {
-                    let state = app_handle.state::<AppState>();
-                    if let Err(error) = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id.clone(), monitor_id.clone()).await {
-                        let _ = app_handle.emit("ow:restore-error", serde_json::json!({
-                            "wallpaperId": wallpaper_id,
-                            "monitorId": monitor_id,
-                            "message": error,
-                        }));
-                    }
+            std::thread::spawn(move || {
+                let state = app_handle.state::<AppState>();
+                let Ok(_scan_guard) = state.library_scan_lock.lock() else { return; };
+                let mut snapshot = match state.data.lock() {
+                    Ok(data) => data.clone(),
+                    Err(_) => return,
+                };
+                if let Err(error) = library::scan_library(&mut snapshot, &state.app_data_dir.join("thumbnails")) {
+                    let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                        "message": format!("Не удалось просканировать библиотеку: {error}"),
+                    }));
+                    return;
                 }
+                {
+                    let Ok(mut data) = state.data.lock() else { return; };
+                    let favorites: std::collections::HashMap<String, bool> = data.wallpapers.iter()
+                        .map(|item| (item.id.clone(), item.favorite)).collect();
+                    for item in &mut snapshot.wallpapers {
+                        if let Some(favorite) = favorites.get(&item.id) { item.favorite = *favorite; }
+                    }
+                    data.wallpapers = snapshot.wallpapers;
+                }
+                for root in snapshot.library_roots {
+                    let _ = app_handle.asset_protocol_scope().allow_directory(std::path::PathBuf::from(root), true);
+                }
+                let _ = app_handle.asset_protocol_scope().allow_directory(state.app_data_dir.join("thumbnails"), true);
+                if let Err(error) = state.save() {
+                    let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                        "message": format!("Не удалось сохранить индекс библиотеки: {error}"),
+                    }));
+                }
+                let _ = app_handle.emit("ow:library-ready", ());
+                drop(_scan_guard);
+
+                let assignments = state.data.lock()
+                    .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
+                tauri::async_runtime::spawn(async move {
+                    for (monitor_id, wallpaper_id) in assignments {
+                        let state = app_handle.state::<AppState>();
+                        if let Err(error) = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id.clone(), monitor_id.clone()).await {
+                            let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                                "wallpaperId": wallpaper_id,
+                                "monitorId": monitor_id,
+                                "message": error,
+                            }));
+                        }
+                    }
+                });
             });
             Ok(())
         })
