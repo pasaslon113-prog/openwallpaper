@@ -33,6 +33,14 @@ jobs:
       - name: Check frontend
         run: npm run build
 
+      - name: Check Rust formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Check Rust
+        working-directory: src-tauri
+        run: cargo check --target x86_64-pc-windows-msvc
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test --target x86_64-pc-windows-msvc
