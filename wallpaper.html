@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenWallpaper Surface</title>
+    <style>
+      html, body, #wallpaper-root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+      #wallpaper-root { position: relative; }
+      .web-wallpaper, .scene-layer { position: absolute; border: 0; width: 100%; height: 100%; }
+      .web-wallpaper { inset: 0; }
+      .scene-layer { object-fit: cover; }
+    </style>
+  </head>
+  <body>
+    <main id="wallpaper-root"></main>
+    <script type="module" src="/src/wallpaper/main.ts"></script>
+  </body>
+</html>
