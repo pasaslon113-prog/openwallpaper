@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 7812)
-Total output lines: 343
-
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -135,7 +132,66 @@ function libraryPage(): string {
   </div>
   <div class="library-toolbar">
     <div class="search-box"><span>⌕</span><input id="library-search" type="search" placeholder="Поиск по библиотеке..." value="${esc(state.search)}"></div>
-    <select id="kind-filter" class="select-control"><option value="all">Все форматы</…2812 tokens truncated…ction class="settings-card full"><div class="settings-card-head"><div><b>Игровые процессы</b><small>Имена exe-файлов, при которых обои будут останавливаться</small></div><span>⌘</span></div><textarea id="game_processes" class="process-list" spellcheck="false">${esc(s.game_processes.join("\n"))}</textarea></section>
+    <select id="kind-filter" class="select-control"><option value="all">Все форматы</option>${Object.entries(kindLabel).map(([key, label]) => `<option value="${key.toLowerCase()}" ${state.filter === key.toLowerCase() ? "selected" : ""}>${label}</option>`).join("")}</select>
+    <button class="filter-button ${state.favoritesOnly ? "active" : ""}" data-action="favorites">${state.favoritesOnly ? "★" : "☆"} Избранное</button>
+    <button class="icon-button" data-action="rescan" title="Обновить библиотеку">↻</button>
+  </div>
+  <div class="library-layout">
+    <section class="library-results">
+      <div class="section-line"><b>${visible.length} обоев${state.activeCollection ? ` · ${esc(state.collections.find((c) => c.id === state.activeCollection)?.name ?? "Подборка")}` : ""}</b><span>${state.activeCollection ? `<button class="text-link" data-action="clear-collection">Показать всё</button>` : "Сортировка: название"}</span></div>
+      ${visible.length ? `<div class="wallpaper-grid">${visible.map(cardMarkup).join("")}</div>` : `<div class="empty-state"><div class="empty-icon">▧</div><h3>Здесь пока пусто</h3><p>${state.wallpapers.length ? "Измените фильтр или поисковый запрос." : "Добавьте папку с видео, изображениями, GIF или веб-обоями."}</p><button class="button button-primary" data-action="import">Импортировать папку</button></div>`}
+    </section>
+    <aside class="detail-panel">${selected ? detailMarkup(selected) : `<div class="detail-empty">Выберите обои, чтобы увидеть подробности</div>`}</aside>
+  </div>`;
+}
+
+function detailMarkup(item: Wallpaper): string {
+  const previewSource = item.preview_path ? convertFileSrc(item.preview_path) : item.preview_data_uri;
+  const cover = previewSource ? `<img src="${esc(previewSource)}" alt="">` : item.kind === "Video" ? `<video class="detail-video-preview" src="${esc(convertFileSrc(item.path))}" muted autoplay loop playsinline></video>` : `<div class="detail-placeholder">${kindLabel[item.kind]}</div>`;
+  return `<div class="detail-cover">${cover}<span class="detail-cover-type">${kindLabel[item.kind]}</span></div>
+    <div class="detail-body"><div class="eyebrow">ВЫБРАННЫЕ ОБОИ</div><h2>${esc(item.title)}</h2><p class="detail-description">${esc(item.description || "Локальный файл из вашей коллекции.")}</p>
+      <div class="detail-facts"><div><span>ФОРМАТ</span><b>${kindLabel[item.kind]}</b></div><div><span>ИСТОЧНИК</span><b>${esc(item.source)}</b></div><div><span>ФАЙЛЫ</span><b>${item.file_count}</b></div></div>
+      <label class="field-label" for="monitor-select">ПРИМЕНИТЬ НА МОНИТОР</label><select id="monitor-select" class="select-control select-full"><option value="all" ${state.selectedMonitor === "all" ? "selected" : ""}>Все мониторы</option>${state.monitors.map((m) => `<option value="${esc(m.id)}" ${state.selectedMonitor === m.id ? "selected" : ""}>${esc(m.name)}${m.primary ? " · основной" : ""} (${m.width}×${m.height})</option>`).join("")}</select>
+      <button class="button button-primary apply-button" data-action="apply" data-id="${esc(item.id)}">Установить обои <span>→</span></button>
+      <div class="detail-secondary"><button data-action="favorite" data-id="${esc(item.id)}" class="button button-outline">${item.favorite ? "★ В избранном" : "☆ В избранное"}</button><button data-action="add-collection" data-id="${esc(item.id)}" class="button button-outline">＋ В подборку</button></div>
+    </div>`;
+}
+
+function workshopPage(): string {
+  return `<div class="page-heading"><div><div class="eyebrow">ВНЕШНИЙ КАТАЛОГ STEAM</div><h1>Workshop Wallpaper Engine</h1><p>Этот каталог содержит публикации для Steam-версии Wallpaper Engine. Для подписки и загрузки нужна сама Wallpaper Engine.</p></div><button class="button button-quiet" data-action="open-workshop">Открыть каталог Steam ↗</button></div>
+    <div class="workshop-search"><div class="search-box"><span>⌕</span><input id="workshop-search" type="search" placeholder="Найти обои в Workshop..." value="${esc(state.workshopQuery)}"></div><button class="button button-primary" data-action="search-workshop">Искать</button></div>
+    <div class="notice"><span>ⓘ</span><div><b>Workshop требует Wallpaper Engine</b><p>OpenWallpaper не загружает публикации Wallpaper Engine и не устанавливает их через Steam. Для полностью независимого использования выберите один из встроенных фонов в библиотеке или импортируйте собственную папку.</p></div></div>
+    ${state.workshop.length ? `<div class="workshop-grid">${state.workshop.map((item) => `<article class="workshop-card"><div class="workshop-cover">${item.preview_url && item.preview_url.startsWith("https://") ? `<img src="${esc(item.preview_url)}" alt="" loading="lazy">` : `<div class="cover-placeholder kind-video"><span>STEAM WORKSHOP</span></div>`}</div><div class="workshop-card-body"><b>${esc(item.title)}</b><small>ID ${esc(item.published_file_id)} · ${item.installed ? "Уже загружено" : "Не установлено"}</small><button class="button ${item.installed ? "button-outline" : "button-primary"}" data-action="open-item" data-id="${esc(item.published_file_id)}">${item.installed ? "Открыть в Steam" : "Подписаться в Steam"} ↗</button></div></article>`).join("")}</div>` : `<div class="empty-state workshop-empty"><div class="empty-icon">◈</div><h3>Каталог Workshop</h3><p>Введите запрос для поиска публикаций Wallpaper Engine. Доступность выдачи зависит от Steam Community.</p><button class="button button-outline" data-action="search-workshop">Показать популярное</button></div>`}`;
+}
+
+function collectionsPage(): string {
+  const selectedCollection = state.collections[0];
+  return `<div class="page-heading"><div><div class="eyebrow">ОРГАНИЗАЦИЯ</div><h1>Подборки</h1><p>Группируйте любимые обои по темам, стилям или мониторам.</p></div><button class="button button-primary" data-action="new-collection">＋ Создать подборку</button></div>
+    ${state.collections.length ? `<div class="collection-grid">${state.collections.map((c) => `<article class="collection-card"><div class="collection-art"><span>▤</span></div><div><b>${esc(c.name)}</b><small>${c.wallpaper_ids.length} элементов</small></div><button class="button button-outline" data-action="view-collection" data-id="${esc(c.id)}">Открыть</button></article>`).join("")}</div>` : `<div class="empty-state"><div class="empty-icon">▤</div><h3>Подборок пока нет</h3><p>Создайте первую подборку и добавляйте в неё обои из библиотеки.</p><button class="button button-primary" data-action="new-collection">Создать подборку</button></div>`}
+    ${selectedCollection ? `<div class="collection-hint">Подборки сохраняются локально в профиле OpenWallpaper.</div>` : ""}`;
+}
+
+function settingsPage(): string {
+  const s = state.settings!;
+  return `<div class="page-heading"><div><div class="eyebrow">ПОВЕДЕНИЕ ПРИЛОЖЕНИЯ</div><h1>Настройки</h1><p>Настройте производительность, запуск и поведение обоев.</p></div><button class="button button-primary" data-action="save-settings">Сохранить изменения</button></div>
+    <div class="settings-layout">
+      <section class="settings-card"><div class="settings-card-head"><div><b>Запуск и система</b><small>Фоновая работа OpenWallpaper</small></div><span>⌁</span></div>
+        ${toggleRow("autostart", "Запускать вместе с Windows", "Приложение стартует в фоне и восстанавливает обои.", s.autostart)}
+        ${toggleRow("start_minimized", "Запускать свёрнутым", "Не показывать окно при входе в систему.", s.start_minimized)}
+        ${toggleRow("pause_in_games", "Приостанавливать в играх", "Останавливать воспроизведение при активном игровом процессе.", s.pause_in_games)}
+        ${toggleRow("pause_on_lock", "Пауза при блокировке Windows", "Приостанавливать обои на экране блокировки.", s.pause_on_lock)}
+        ${toggleRow("pause_on_battery", "Пауза от батареи", "Резервная настройка для ноутбуков.", s.pause_on_battery)}
+      </section>
+      <section class="settings-card"><div class="settings-card-head"><div><b>Производительность</b><small>Снижение нагрузки на систему</small></div><span>◉</span></div>
+        <div class="range-row"><div><b>Лимит FPS</b><small>Ограничение кадров для медиадвижка</small></div><strong id="fps-value">${s.fps_limit} FPS</strong><input id="fps_limit" type="range" min="10" max="60" step="5" value="${s.fps_limit}"></div>
+        <div class="range-row"><div><b>Длительность слайда</b><small>Время показа одного изображения</small></div><strong id="slide-value">${s.slideshow_seconds} сек.</strong><input id="slideshow_seconds" type="range" min="2" max="30" step="1" value="${s.slideshow_seconds}"></div>
+        <div class="range-row"><div><b>Громкость</b><small>Уровень звука видеообоев</small></div><strong id="volume-value">${s.muted ? "Без звука" : `${s.volume}%`}</strong><input id="volume" type="range" min="0" max="100" step="5" value="${s.volume}"></div>
+        ${toggleRow("muted", "Выключить звук", "Звук отключён по умолчанию.", s.muted)}
+      </section>
+      <section class="settings-card full"><div class="settings-card-head"><div><b>Мониторы</b><small>Индивидуальные ограничения FPS и расположение</small></div><span>▣</span></div>
+        ${state.monitors.map((m) => `<div class="monitor-row"><div class="monitor-icon">▰</div><div class="monitor-info"><b>${esc(m.name)} ${m.primary ? "· Основной" : ""}</b><small>${m.width} × ${m.height} · ${m.x}, ${m.y}</small></div><label class="monitor-fps">FPS <select data-monitor-fps="${esc(m.id)}"><option value="0">Общий (${s.fps_limit})</option>${[15,20,24,30,40,45,50,60].map((v) => `<option value="${v}" ${(s.monitor_fps[m.id] ?? 0) === v ? "selected" : ""}>${v}</option>`).join("")}</select></label></div>`).join("")}
+      </section>
+      <section class="settings-card full"><div class="settings-card-head"><div><b>Игровые процессы</b><small>Имена exe-файлов, при которых обои будут останавливаться</small></div><span>⌘</span></div><textarea id="game_processes" class="process-list" spellcheck="false">${esc(s.game_processes.join("\n"))}</textarea></section>
     </div>`;
 }
 function toggleRow(id: string, title: string, description: string, checked: boolean): string {
