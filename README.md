@@ -38,7 +38,7 @@ Tauri management UI (WebView2)
           └─ Windows system tray
 ```
 
-The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper locates the desktop host and falls back to `Progman` when the separate WorkerW window is not available. Windows shell updates may require compatibility adjustments.
+The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper requires a separate `WorkerW` desktop host and reports an error when Explorer does not provide one; it does not treat `Progman` as a successful fallback. Windows shell updates may require compatibility adjustments.
 
 ## Requirements
 
@@ -79,7 +79,7 @@ npm run build
 Build Windows installers:
 
 ```powershell
-npm run tauri build -- --bundles nsis,wix
+npm run tauri build -- --bundles nsis,msi
 ```
 
 The installers are generated under `src-tauri/target/release/bundle/`.
@@ -192,7 +192,7 @@ The repository includes a Windows GitHub Actions workflow. After the source is p
    ```
 
 3. Open **GitHub → Releases**, review the draft `OpenWallpaper v0.1.0`, and publish it when ready.
-4. Download the `.exe` (NSIS) or `.msi` (WiX) installer from that release.
+4. Download the `.exe` (NSIS) or `.msi` installer from that release.
 
 The first public build should be treated as an experimental MVP. It is not code-signed. Windows may display SmartScreen warnings for unsigned builds. The media engine dynamically loads `mpv-2.dll`; the libmpv runtime is intentionally not bundled and must be obtained from a trusted official distribution in accordance with its licence. Without it, HTML wallpapers can work, but video/GIF/image/slideshow playback will report that the runtime is unavailable.
 
@@ -226,3 +226,4 @@ npm run build
 ```
 
 Tests cover media-format classification, scene path traversal rejection, valid image-based slideshow discovery, on-disk thumbnail cache reuse, settings normalization, wallpaper-kind serialization, and settings persistence. These tests still need to be executed on a Windows build machine before publishing a release.
+
