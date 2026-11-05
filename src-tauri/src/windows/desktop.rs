@@ -19,6 +19,20 @@ extern "system" {
     fn SetParent(child: Hwnd, parent: Hwnd) -> Hwnd;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn SetWindowPos(hwnd: Hwnd, insert_after: Hwnd, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+    fn GetParent(hwnd: Hwnd) -> Hwnd;
+    fn IsWindow(hwnd: Hwnd) -> i32;
+    fn GetClassNameW(hwnd: Hwnd, class_name: *mut u16, max_count: i32) -> i32;
+}
+
+#[cfg(windows)]
+pub fn has_live_workerw_parent(hwnd: *mut c_void) -> bool {
+    unsafe {
+        let parent = GetParent(hwnd);
+        if parent.is_null() || IsWindow(parent) == 0 { return false; }
+        let mut class_name = [0u16; 64];
+        let length = GetClassNameW(parent, class_name.as_mut_ptr(), class_name.len() as i32);
+        length > 0 && String::from_utf16_lossy(&class_name[..length as usize]) == "WorkerW"
+    }
 }
 
 #[cfg(windows)]
@@ -62,8 +76,9 @@ pub fn attach_to_desktop(hwnd: *mut c_void, x: i32, y: i32, width: u32, height: 
         let _ = SendMessageW(progman, 0x052C, 0xD, 1);
         let mut worker: Hwnd = std::ptr::null_mut();
         let _ = EnumWindows(Some(find_worker_window), &mut worker as *mut Hwnd as isize);
-        // Progman can place the surface above desktop icons while appearing to succeed.
-        // Fail explicitly when Explorer did not create a WorkerW host.
+        // Progman is not a safe substitute: parenting to it may put the surface
+        // above desktop icons while appearing to succeed. Report failure so the
+        // caller can leave the wallpaper unapplied and explain the problem.
         if worker.is_null() {
             anyhow::bail!("Не найден WorkerW рабочего стола. Обои не были применены; перезапустите Проводник Windows или проверьте совместимость этой версии Windows.");
         }
@@ -94,3 +109,4 @@ pub fn attach_to_desktop(hwnd: *mut c_void, x: i32, y: i32, width: u32, height: 
 pub fn attach_to_desktop(_hwnd: (), _x: i32, _y: i32, _width: u32, _height: u32) -> anyhow::Result<()> {
     anyhow::bail!("Размещение обоев за значками поддерживается только в Windows 10/11");
 }
+
