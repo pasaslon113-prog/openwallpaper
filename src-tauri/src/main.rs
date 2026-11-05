@@ -83,7 +83,13 @@ fn main() {
                     .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
                 for (monitor_id, wallpaper_id) in assignments {
                     let state = app_handle.state::<AppState>();
-                    let _ = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id, monitor_id).await;
+                    if let Err(error) = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id.clone(), monitor_id.clone()).await {
+                        let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                            "wallpaperId": wallpaper_id,
+                            "monitorId": monitor_id,
+                            "message": error,
+                        }));
+                    }
                 }
             });
             Ok(())
@@ -118,3 +124,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("OpenWallpaper failed to start");
 }
+
