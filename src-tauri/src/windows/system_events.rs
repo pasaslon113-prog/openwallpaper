@@ -1,5 +1,5 @@
 use crate::{model::AppSettings, state::AppState};
-use std::{thread, time::Duration};
+use std::{thread, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub fn spawn(app: AppHandle) {
@@ -13,6 +13,7 @@ pub fn spawn(app: AppHandle) {
     thread::spawn(move || {
         let mut last_pause = Some(initial_paused);
         let mut last_monitors: Option<Vec<crate::model::MonitorInfo>> = None;
+        let mut last_recovery: Option<Instant> = None;
         loop {
             thread::sleep(Duration::from_secs(4));
             let Some(state) = app.try_state::<AppState>() else { continue; };
@@ -25,10 +26,12 @@ pub fn spawn(app: AppHandle) {
                     #[cfg(not(windows))]
                     { false }
                 });
-                if monitors_changed || explorer_restarted {
+                let recovery_ready = last_recovery.map(|instant| instant.elapsed() >= Duration::from_secs(12)).unwrap_or(true);
+                if (monitors_changed || explorer_restarted) && recovery_ready {
                     let previous = last_monitors.clone().unwrap_or_default();
                     let app_for_reconcile = app.clone();
                     let next = current_monitors.clone();
+                    last_recovery = Some(Instant::now());
                     tauri::async_runtime::spawn(async move {
                         crate::commands::reconcile_monitor_wallpapers(app_for_reconcile, previous, next).await;
                     });
