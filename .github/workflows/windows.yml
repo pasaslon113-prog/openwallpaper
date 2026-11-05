@@ -71,6 +71,20 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm run tauri build -- --bundles nsis,msi
 
+      - name: Smoke test Windows application startup
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath 'src-tauri/target/release/openwallpaper.exe' -PassThru
+          try {
+            Start-Sleep -Seconds 10
+            $app.Refresh()
+            if ($app.HasExited) { throw "OpenWallpaper exited during startup smoke test (code $($app.ExitCode))" }
+          }
+          finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          }
+
       - name: Upload Windows installers as workflow artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
