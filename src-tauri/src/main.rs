@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod builtin;
 mod commands;
 mod library;
 mod model;
@@ -24,6 +25,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
+            let builtin_wallpapers = builtin::install(&app_data)?;
             let state = AppState::load(app_data.clone())?;
             #[cfg(windows)]
             let discovered_roots = windows::steam_paths::discover_wallpaper_engine_roots();
@@ -32,6 +34,7 @@ fn main() {
             {
                 let mut data = state.data.lock().map_err(|_| "state lock poisoned")?;
                 library::add_roots(&mut data, &discovered_roots)?;
+                library::add_roots(&mut data, &[builtin_wallpapers.to_string_lossy().into_owned()])?;
             }
             app.manage(state);
             {
@@ -115,8 +118,25 @@ fn main() {
                 let _ = app_handle.emit("ow:library-ready", ());
                 drop(_scan_guard);
 
-                let assignments = state.data.lock()
+                let mut assignments = state.data.lock()
                     .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
+                if assignments.is_empty() {
+                    let default_id = state.data.lock().ok()
+                        .and_then(|data| builtin::default_wallpaper_id(&data.wallpapers));
+                    let primary = commands::get_monitors(app_handle.clone()).ok()
+                        .and_then(|monitors| monitors.into_iter().find(|monitor| monitor.primary));
+                    if let (Some(wallpaper_id), Some(monitor)) = (default_id, primary) {
+                        if let Ok(mut data) = state.data.lock() {
+                            data.settings.monitor_wallpapers.insert(monitor.id, wallpaper_id);
+                            assignments = data.settings.monitor_wallpapers.clone();
+                        }
+                        if let Err(error) = state.save() {
+                            let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                                "message": format!("Не удалось сохранить стартовые обои: {error}"),
+                            }));
+                        }
+                    }
+                }
                 tauri::async_runtime::spawn(async move {
                     for (monitor_id, wallpaper_id) in assignments {
                         let state = app_handle.state::<AppState>();

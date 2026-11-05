@@ -8,6 +8,7 @@ This repository does not contain Wallpaper Engine source code, proprietary asset
 
 - Local library scanner for MP4, WebM, MKV, MOV, AVI, GIF, PNG, JPEG, WebP and BMP.
 - HTML wallpaper folders (`index.html`) and user-supplied HTTP(S) web wallpapers.
+- Three original, animated HTML wallpapers are installed into the local library on first launch. They work without Steam, Wallpaper Engine, libmpv or an internet connection.
 - First-frame previews for images and GIFs; video previews play only while the pointer is over a library card.
 - Folder-based slideshows: a directory with at least two supported still images is also exposed as a slideshow.
 - A clean-room `scene.json` layered-scene format (specification below).
@@ -47,7 +48,7 @@ The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper r
 - Node.js 20+ and npm.
 - Visual Studio Build Tools with the **Desktop development with C++** workload and Windows 10/11 SDK.
 - Microsoft Edge WebView2 Runtime.
-- A Windows build of **libmpv** providing `mpv-2.dll` and its required runtime DLLs.
+- Optionally, a Windows build of **libmpv** providing `mpv-2.dll` and its required runtime DLLs for video, GIF, image and slideshow playback.
 
 The libmpv runtime is deliberately not vendored in this repository. Obtain it from an official mpv/libmpv distribution, respecting the distribution's licence, and place `mpv-2.dll` plus its sibling runtime dependencies next to `OpenWallpaper.exe`. Alternatively set the `OPENWALLPAPER_MPV` environment variable to the full path of `mpv-2.dll`.
 
@@ -86,12 +87,10 @@ The installers are generated under `src-tauri/target/release/bundle/`.
 
 ## First run
 
-1. Start OpenWallpaper. It scans the default Steam library locations it can discover.
-2. Select **Import folder** and choose any additional wallpaper directory.
-3. Select an item in the library.
-4. Choose **All monitors** or a single monitor in the details panel.
-5. Select **Set wallpaper**.
-6. Use the tray icon to reopen the manager, pause playback or exit.
+1. Start OpenWallpaper. It adds three original animated wallpapers and applies Aurora Drift to the primary monitor on a clean first launch. No Steam account or Wallpaper Engine installation is required.
+2. To switch backgrounds, select another wallpaper and choose **All monitors** or a single monitor in the details panel, then select **Set wallpaper**.
+3. To add your own backgrounds, select **Import folder**. HTML wallpaper folders with an `index.html` entry point work without libmpv.
+4. Use the tray icon to reopen the manager, pause playback or exit.
 
 For video/GIF/image/slideshow playback, make sure `mpv-2.dll` is accessible to the application. The app reports a direct error when libmpv cannot be loaded; it does not silently substitute a different player.
 
@@ -133,6 +132,8 @@ A scene is a directory containing `scene.json` and the assets referenced by its 
 All layer paths are resolved relative to the scene directory. The backend canonicalizes each path and rejects paths that attempt to escape that directory. Scene manifests are independent of Wallpaper Engine's scene format.
 
 ## Steam Workshop and Wallpaper Engine content
+
+The Workshop page is an optional catalogue for the Steam edition of Wallpaper Engine. It is not required to use OpenWallpaper. Workshop subscription and downloads require Wallpaper Engine's Steam app (ID `431960`) and are handled by Steam; OpenWallpaper does not download those files. For a standalone setup, use the bundled OpenWallpaper originals, import your own folders, or add a compatible HTTP(S) web wallpaper.
 
 - Workshop search uses the public Steam Community browse page for App ID `431960`.
 - Item details can be requested from the official Steam Web API.

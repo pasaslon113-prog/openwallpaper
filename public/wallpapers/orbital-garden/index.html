@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b19">
+  <title>Orbital Garden · OpenWallpaper</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #080b19; }
+    .space { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 120%, #213b55 0, #111b32 36%, #080b19 77%); }
+    .nebula { position: absolute; inset: -20%; background: radial-gradient(ellipse at 22% 29%, #7145a533, transparent 35%), radial-gradient(ellipse at 78% 55%, #397db133, transparent 38%); filter: blur(40px); animation: nebula 34s ease-in-out infinite alternate; }
+    .stars { position: absolute; inset: 0; background-image: radial-gradient(1px 1px at 13% 16%, #fff 98%, transparent), radial-gradient(2px 2px at 86% 27%, #c5e6ff 98%, transparent), radial-gradient(1px 1px at 31% 74%, #fff 98%, transparent), radial-gradient(1px 1px at 69% 82%, #fff 98%, transparent), radial-gradient(1px 1px at 52% 33%, #fff 98%, transparent); background-size: 310px 270px; }
+    .planet { position: absolute; width: min(34vw, 43vh); aspect-ratio: 1; left: 50%; top: 49%; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 31% 27%, #f3d1ae 0, #d39582 9%, #875d76 27%, #3c476d 53%, #18253e 74%, #0a1222 100%); box-shadow: inset -28px -16px 46px #050b19, 0 0 36px #77bfff44, 0 0 120px #7774ff33; }
+    .ring { position: absolute; width: min(65vw, 88vh); height: min(19vw, 26vh); left: 50%; top: 50%; border: 1px solid #c4d7ff66; border-radius: 50%; transform: translate(-50%, -50%) rotate(-17deg); box-shadow: 0 0 18px #9fcfff44, inset 0 0 18px #9fcfff22; animation: orbit 48s linear infinite; }
+    .ring::before { content: ""; position: absolute; left: 50%; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #f6e1c4; box-shadow: 0 0 18px 5px #f4cf9e99; }
+    .moon { position: absolute; width: 5.2vw; min-width: 38px; aspect-ratio: 1; left: 70%; top: 22%; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #e3e9f2, #8d9daf 47%, #46546e 72%, #18243b); box-shadow: 0 0 30px #a8c5f355; animation: moon 13s ease-in-out infinite alternate; }
+    .glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 90%, #a3d5ff1a, transparent 40%); }
+    @keyframes orbit { to { transform: translate(-50%, -50%) rotate(343deg); } }
+    @keyframes moon { to { transform: translate(-12px, 15px); } }
+    @keyframes nebula { to { transform: translate(2%, -1%) scale(1.08); opacity: .72; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+  </style>
+</head>
+<body><div class="space"></div><div class="nebula"></div><div class="stars"></div><div class="ring"></div><div class="planet"></div><div class="moon"></div><div class="glow"></div></body>
+</html>
+
