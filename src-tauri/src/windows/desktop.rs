@@ -22,6 +22,13 @@ extern "system" {
 }
 
 #[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn SetLastError(error: u32);
+    fn GetLastError() -> u32;
+}
+
+#[cfg(windows)]
 unsafe extern "system" fn find_worker_window(top: Hwnd, parameter: isize) -> i32 {
     const SHELL_VIEW: [u16; 17] = [83, 72, 69, 76, 76, 68, 76, 76, 95, 68, 101, 102, 86, 105, 101, 119, 0];
     const WORKER: [u16; 8] = [87, 111, 114, 107, 101, 114, 87, 0];
@@ -55,14 +62,22 @@ pub fn attach_to_desktop(hwnd: *mut c_void, x: i32, y: i32, width: u32, height: 
         let _ = SendMessageW(progman, 0x052C, 0xD, 1);
         let mut worker: Hwnd = std::ptr::null_mut();
         let _ = EnumWindows(Some(find_worker_window), &mut worker as *mut Hwnd as isize);
-        // Windows 11 24H2 may expose no separate WorkerW; use Progman as a compatibility fallback.
-        let parent = if worker.is_null() { progman } else { worker };
+        // Progman can place the surface above desktop icons while appearing to succeed.
+        // Fail explicitly when Explorer did not create a WorkerW host.
+        if worker.is_null() {
+            anyhow::bail!("Не найден WorkerW рабочего стола. Обои не были применены; перезапустите Проводник Windows или проверьте совместимость этой версии Windows.");
+        }
+        let parent = worker;
 
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let _ = SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !WS_POPUP) | WS_CHILD);
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (ex_style & !WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW);
-        let _previous_parent = SetParent(hwnd, parent);
+        SetLastError(0);
+        let previous_parent = SetParent(hwnd, parent);
+        if previous_parent.is_null() && GetLastError() != 0 {
+            anyhow::bail!("Не удалось встроить поверхность обоев в WorkerW рабочего стола");
+        }
 
         let mut parent_rect = Rect { left: 0, top: 0, right: 0, bottom: 0 };
         if GetWindowRect(parent, &mut parent_rect) == 0 { anyhow::bail!("Не удалось получить геометрию рабочего стола"); }
