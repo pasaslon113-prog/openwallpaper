@@ -17,7 +17,7 @@ pub struct AppState {
     pub app_data_dir: PathBuf,
     pub paused: Mutex<bool>,
     pub manual_paused: Mutex<bool>,
-    pub library_scan_lock: Mutex<()>,
+    pub library_scan_lock: tokio::sync::Mutex<()>,
     /// True when the initial library scan has either completed or failed.
     pub library_scan_complete: AtomicBool,
     /// Startup and restore failures retained until the UI explicitly acknowledges them.
@@ -57,7 +57,7 @@ impl AppState {
             app_data_dir,
             paused: Mutex::new(false),
             manual_paused: Mutex::new(false),
-            library_scan_lock: Mutex::new(()),
+            library_scan_lock: tokio::sync::Mutex::new(()),
             library_scan_complete: AtomicBool::new(false),
             startup_errors: Mutex::new(startup_errors),
             save_lock: Mutex::new(()),
