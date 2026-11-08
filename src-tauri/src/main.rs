@@ -17,6 +17,20 @@ use tauri::{
     Emitter, Manager,
 };
 
+
+fn report_restore_error(app: &tauri::AppHandle, payload: serde_json::Value) {
+    let message = payload.get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Неизвестная ошибка восстановления обоев")
+        .to_string();
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut errors) = state.startup_errors.lock() {
+            errors.push(message);
+        }
+    }
+    let _ = app.emit("ow:restore-error", payload);
+}
+
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         let path = std::env::temp_dir().join("openwallpaper-startup-error.log");
@@ -89,7 +103,7 @@ fn main() {
                 let state = app_handle.state::<AppState>();
                 let Ok(_scan_guard) = state.library_scan_lock.lock() else {
                     state.library_scan_complete.store(true, Ordering::Release);
-                    let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                    report_restore_error(&app_handle, serde_json::json!({
                         "message": "Не удалось получить блокировку сканирования библиотеки",
                     }));
                     let _ = app_handle.emit("ow:library-ready", ());
@@ -97,11 +111,18 @@ fn main() {
                 };
                 let mut snapshot = match state.data.lock() {
                     Ok(data) => data.clone(),
-                    Err(_) => return,
+                    Err(_) => {
+                        state.library_scan_complete.store(true, Ordering::Release);
+                        report_restore_error(&app_handle, serde_json::json!({
+                            "message": "Не удалось прочитать состояние библиотеки",
+                        }));
+                        let _ = app_handle.emit("ow:library-ready", ());
+                        return;
+                    }
                 };
                 if let Err(error) = library::scan_library(&mut snapshot, &state.app_data_dir.join("thumbnails")) {
                     state.library_scan_complete.store(true, Ordering::Release);
-                    let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                    report_restore_error(&app_handle, serde_json::json!({
                         "message": format!("Не удалось просканировать библиотеку: {error}"),
                     }));
                     let _ = app_handle.emit("ow:library-ready", ());
@@ -121,7 +142,7 @@ fn main() {
                 }
                 let _ = app_handle.asset_protocol_scope().allow_directory(state.app_data_dir.join("thumbnails"), true);
                 if let Err(error) = state.save() {
-                    let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                    report_restore_error(&app_handle, serde_json::json!({
                         "message": format!("Не удалось сохранить индекс библиотеки: {error}"),
                     }));
                 }
@@ -142,7 +163,7 @@ fn main() {
                             assignments = data.settings.monitor_wallpapers.clone();
                         }
                         if let Err(error) = state.save() {
-                            let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                            report_restore_error(&app_handle, serde_json::json!({
                                 "message": format!("Не удалось сохранить стартовые обои: {error}"),
                             }));
                         }
@@ -152,7 +173,7 @@ fn main() {
                     for (monitor_id, wallpaper_id) in assignments {
                         let state = app_handle.state::<AppState>();
                         if let Err(error) = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id.clone(), monitor_id.clone()).await {
-                            let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                            report_restore_error(&app_handle, serde_json::json!({
                                 "wallpaperId": wallpaper_id,
                                 "monitorId": monitor_id,
                                 "message": error,
