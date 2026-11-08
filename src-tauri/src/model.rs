@@ -55,6 +55,7 @@ pub struct MonitorInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
     pub autostart: bool,
     pub start_minimized: bool,
@@ -118,6 +119,7 @@ pub struct Collection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PersistedData {
     pub library_roots: Vec<String>,
     pub wallpapers: Vec<WallpaperItem>,
