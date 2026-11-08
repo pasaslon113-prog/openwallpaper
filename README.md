@@ -18,7 +18,7 @@ This repository does not contain Wallpaper Engine source code, proprietary asset
 - Steam Workshop search through the public Steam Community browse page, item details through the official `ISteamRemoteStorage/GetPublishedFileDetails` endpoint, and subscription hand-off through the Steam client URI. Subscription and downloading are performed by Steam itself.
 - One wallpaper surface per monitor, an individual wallpaper assignment per monitor and a per-monitor FPS setting.
 - Win32 WorkerW desktop placement, a tray menu, close-to-tray behaviour, Windows startup registration, saved-wallpaper restoration, manual pause/resume, game-process pause, lock-screen process detection and optional battery pause. During Windows sleep, the operating system suspends the app and playback; normal monitoring resumes after wake.
-- JSON settings, Rust unit tests, Windows CI workflow and NSIS/WiX bundle configuration.
+- JSON settings with backup/recovery for malformed files, Rust unit tests, Windows CI workflow and NSIS/MSI bundle configuration.
 
 ## Architecture
 
@@ -40,7 +40,7 @@ Tauri management UI (WebView2)
           └─ Windows system tray
 ```
 
-The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper requires a separate `WorkerW` desktop host and reports an error when Explorer does not provide one; it does not treat `Progman` as a successful fallback. Windows shell updates may require compatibility adjustments.
+The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper requires a separate `WorkerW` desktop host and reports an error when Explorer does not provide one; it does not treat `Progman` as a successful fallback. The app monitors only its active desktop surfaces, and rebuilds them after Explorer restarts or display-topology changes. Windows shell updates may require compatibility adjustments.
 
 ## Requirements
 
@@ -146,13 +146,15 @@ Wallpaper Engine compatibility is import-by-file, not a binary project converter
 
 ## Performance model
 
-- Rust owns scanning, persistence, process checks and monitor lifecycle.
+- Rust owns scanning, persistence, process checks and monitor lifecycle. Initial scanning runs on a worker thread; manual import and rescans use `spawn_blocking` behind one async scan lock, so filesystem traversal and thumbnail decoding do not block the UI thread. Adding a web wallpaper is serialized with scans so the scan snapshot cannot silently drop it.
 - libmpv is embedded in the native wallpaper surface through its Win32 `wid` API and uses `hwdec=auto-safe`. The quality-reducing `fast` profile is not enabled.
 - A separate surface is created only for each monitor that needs a wallpaper.
 - Still-image and first-frame GIF thumbnails are cached as PNG files under the app-data directory. The cache key includes canonical path, file size and modification time; rescans do not decode/re-encode unchanged previews.
 - Library scans run outside the shared state lock, so browsing and settings reads are not blocked while folders are indexed.
-- Volume/mute changes update existing playback instances; they do not tear down and recreate all wallpaper windows. Surfaces are restarted only when FPS/slideshow timing settings change.
+- Volume/mute changes update existing playback instances; they do not tear down and recreate all wallpaper windows. Surfaces are restarted only when FPS/slideshow timing settings change. When a surface must be replaced, the new one is prepared and persisted before the previous HWND/player is retired. On display reconfiguration, libmpv instances are destroyed before their HWND hosts.
 - Video card previews are loaded only on hover.
+- Startup scan completion, pause state and restore errors are queryable/queued, so UI listeners cannot miss the initial status if WebView2 loads after Rust emits its first events.
+- Corrupt settings JSON is copied to `openwallpaper.corrupt-*.json` and reported before safe defaults are loaded; it is never silently overwritten without a backup.
 - HTML/scene content uses WebView2. The FPS control applies to native media rendered by libmpv. WebView2 pages and HTML scene layers use the browser compositor cadence; the application does not claim to impose a compositor-wide cap on arbitrary third-party JavaScript.
 
 ## Known MVP limitations
@@ -163,11 +165,11 @@ Wallpaper Engine compatibility is import-by-file, not a binary project converter
 - Lock-screen pause detection currently checks the foreground Windows lock/logon processes. Some Windows configurations may expose a different process, so this should be validated on the target device.
 - The user-defined game process list is used for game pause detection. It does not attempt to classify every game automatically.
 - Native Wallpaper Engine scene projects, proprietary package formats, interactive input routing and a GPU-wide WebView2 frame limiter are outside this first MVP.
-- A real Windows build and runtime smoke test are required before calling the app production-ready. This build environment does not provide the Rust/MSVC Windows toolchain.
+- A successful CI build is not a substitute for hardware validation: Explorer restart, sleep/wake, actual WorkerW layering, mixed-DPI multi-monitor changes and libmpv playback still need testing on physical Windows 10/11 systems.
 
 ## Security and privacy
 
-- Local libraries are indexed from folders explicitly added by the user or standard Steam paths discovered from the current Windows account.
+- Local libraries are indexed from folders explicitly added by the user or standard Steam paths discovered from the current Windows account. The default Tauri asset scope is limited to OpenWallpaper's app-data directory; imported roots are added dynamically after explicit selection.
 - Local scene layer paths are restricted to the scene root.
 - Web wallpapers accept only HTTP(S) addresses.
 - Workshop downloading remains under Steam's control and current-account permissions.
@@ -175,7 +177,7 @@ Wallpaper Engine compatibility is import-by-file, not a binary project converter
 
 ## Tests
 
-Fourteen Rust unit tests cover file-type recognition, stable IDs, scene path traversal rejection, valid image-based slideshow discovery, preserving manually added web wallpapers during rescans, thumbnail-cache reuse, settings normalization and persistence, avoiding wallpaper restarts for audio-only changes, Workshop ID parsing/validation, and monitor-window label generation. The workflow in `.github/workflows/windows.yml` runs the Rust tests and builds the frontend/Windows installers on a Windows runner.
+The Rust suite currently contains 24 unit tests covering media-format classification, scene path traversal, slideshow discovery, web-wallpaper preservation, thumbnail-cache reuse, settings normalization and backward compatibility, corrupted-settings backup, persistence, playback restart decisions, WorkerW/window-label helpers, Workshop ID validation and monitor remapping. Windows CI has recorded a successful run with all 24 tests passing, plus frontend build, Rust check/format, NSIS/MSI bundle build and a startup smoke test. Later changes remain under CI validation; see the Actions tab for the latest commit.
 
 ## License
 
@@ -227,5 +229,5 @@ cd ..
 npm run build
 ```
 
-Tests cover media-format classification, scene path traversal rejection, valid image-based slideshow discovery, on-disk thumbnail cache reuse, settings normalization, wallpaper-kind serialization, and settings persistence. These tests still need to be executed on a Windows build machine before publishing a release.
+Windows CI runs `cargo fmt --check`, `cargo check`, `cargo test`, the TypeScript/Vite production build, Tauri NSIS/MSI packaging, and a 10-second process-startup smoke test. The run for commit `68132a67bb9c4d4ed8e2087c35298c40f6c47e16` passed all 24 Rust tests and produced workflow artifacts. The newer changes in the current pull request must also pass CI before they are merged.
 
