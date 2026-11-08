@@ -37,7 +37,7 @@ impl AppState {
                     // Preserve the original file instead of silently discarding user data.
                     let timestamp = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default().as_secs();
+                        .unwrap_or_default().as_nanos();
                     let backup = app_data_dir.join(format!("openwallpaper.corrupt-{timestamp}.json"));
                     fs::copy(&data_file, &backup)?;
                     (
