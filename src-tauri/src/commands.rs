@@ -9,6 +9,17 @@ use crate::{
 use std::{path::PathBuf, sync::atomic::{AtomicU64, Ordering}};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
+
+#[tauri::command]
+pub fn is_library_scan_complete(state: tauri::State<'_, AppState>) -> bool {
+    state.library_scan_complete.load(std::sync::atomic::Ordering::Acquire)
+}
+
+#[tauri::command]
+pub fn get_pause_state(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    state.paused.lock().map(|paused| *paused).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn get_library(state: tauri::State<'_, AppState>, query: Option<String>, kind: Option<String>, favorites_only: Option<bool>) -> Result<Vec<WallpaperItem>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
