@@ -4,7 +4,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
-    sync::Mutex,
+    sync::{atomic::AtomicBool, Mutex},
 };
 
 pub struct AppState {
@@ -18,6 +18,8 @@ pub struct AppState {
     pub paused: Mutex<bool>,
     pub manual_paused: Mutex<bool>,
     pub library_scan_lock: Mutex<()>,
+    /// True when the initial library scan has either completed or failed.
+    pub library_scan_complete: AtomicBool,
     save_lock: Mutex<()>,
 }
 
@@ -40,6 +42,7 @@ impl AppState {
             paused: Mutex::new(false),
             manual_paused: Mutex::new(false),
             library_scan_lock: Mutex::new(()),
+            library_scan_complete: AtomicBool::new(false),
             save_lock: Mutex::new(()),
         })
     }
