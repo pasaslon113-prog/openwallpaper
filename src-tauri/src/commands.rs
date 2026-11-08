@@ -503,22 +503,23 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
     if old_assignments.is_empty() { return; }
 
     let assignments = remap_monitor_assignments(&previous, &current, &old_assignments);
-
-    // Destroy native mpv instances before their HWND hosts. Reversing this order can
-    // leave a decoder holding a dead window handle during display reconfiguration.
-    let wallpaper_labels: Vec<String> = app.webview_windows().keys()
+    let previous_labels: std::collections::HashSet<String> = app.webview_windows().keys()
         .filter(|label| label.starts_with("wallpaper-"))
         .cloned()
         .collect();
-    if let Ok(mut players) = state.playback.lock() {
-        for label in &wallpaper_labels { players.remove(label); }
+
+    // Persist the new monitor mapping, but do not tear down the current surfaces.
+    // apply_wallpaper stages a replacement and retires the previous surface only
+    // after the new HWND, WorkerW parent, and playback engine are ready.
+    if let Ok(mut data) = state.data.lock() {
+        data.settings.monitor_wallpapers = assignments.clone();
     }
-    if let Ok(mut surfaces) = state.active_surfaces.lock() { surfaces.clear(); }
-    for label in wallpaper_labels {
-        if let Some(window) = app.get_webview_window(&label) { let _ = window.destroy(); }
+    if let Err(error) = state.save() {
+        let _ = app.emit("ow:restore-error", serde_json::json!({
+            "message": format!("Не удалось сохранить назначения мониторов: {error}"),
+        }));
+        return;
     }
-    if let Ok(mut data) = state.data.lock() { data.settings.monitor_wallpapers = assignments.clone(); }
-    let _ = state.save();
 
     for (monitor_id, wallpaper_id) in assignments {
         let state = app.state::<AppState>();
@@ -529,6 +530,28 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
                 "message": error,
             }));
         }
+    }
+
+    // Remove surfaces that belonged to disconnected/renumbered monitors only
+    // after replacements were attempted. A failed replacement on an unchanged
+    // monitor remains active and is intentionally retained.
+    let active_labels: std::collections::HashSet<String> = state.active_surfaces.lock()
+        .map(|surfaces| surfaces.values().cloned().collect())
+        .unwrap_or_default();
+    let stale_labels: Vec<String> = previous_labels.difference(&active_labels).cloned().collect();
+    if let Ok(mut players) = state.playback.lock() {
+        for label in &stale_labels { players.remove(label); }
+    }
+    for label in stale_labels {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.destroy();
+        }
+    }
+
+    let active_monitor_ids: std::collections::HashSet<String> = current.iter()
+        .map(|monitor| monitor.id.clone()).collect();
+    if let Ok(mut surfaces) = state.active_surfaces.lock() {
+        surfaces.retain(|monitor_id, _| active_monitor_ids.contains(monitor_id));
     }
 }
 
