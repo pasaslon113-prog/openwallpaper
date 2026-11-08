@@ -36,7 +36,18 @@ fn main() {
         let path = std::env::temp_dir().join("openwallpaper-startup-error.log");
         let _ = std::fs::write(&path, format!("{info}\n"));
     }));
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    #[cfg(windows)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
