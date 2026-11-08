@@ -515,6 +515,9 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
         data.settings.monitor_wallpapers = assignments.clone();
     }
     if let Err(error) = state.save() {
+        if let Ok(mut data) = state.data.lock() {
+            data.settings.monitor_wallpapers = old_assignments;
+        }
         let _ = app.emit("ow:restore-error", serde_json::json!({
             "message": format!("Не удалось сохранить назначения мониторов: {error}"),
         }));
