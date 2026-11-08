@@ -334,6 +334,17 @@ async function boot(): Promise<void> {
     });
     await listen("ow:library-ready", () => { void refresh(); });
     await refresh();
+
+    // Startup events can arrive before WebView2 registers listeners. Query the
+    // durable scan flag after listeners are attached to avoid a stale empty UI.
+    if (await invoke<boolean>("is_library_scan_complete")) {
+      await refresh();
+    }
+
+    // The system watcher initializes pause state before the UI is ready, so its
+    // first event may be lost. Read the actual runtime state during boot.
+    state.paused = await invoke<boolean>("get_pause_state");
+    render();
   } catch (error) {
     app.innerHTML = `<div class="startup-error"><h1>OpenWallpaper не смог запуститься</h1><p>${esc(error)}</p><p>Проверьте права приложения и перезапустите его.</p></div>`;
   }
