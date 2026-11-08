@@ -101,14 +101,7 @@ fn main() {
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let state = app_handle.state::<AppState>();
-                let Ok(_scan_guard) = state.library_scan_lock.blocking_lock() else {
-                    state.library_scan_complete.store(true, Ordering::Release);
-                    report_restore_error(&app_handle, serde_json::json!({
-                        "message": "Не удалось получить блокировку сканирования библиотеки",
-                    }));
-                    let _ = app_handle.emit("ow:library-ready", ());
-                    return;
-                };
+                let _scan_guard = state.library_scan_lock.blocking_lock();
                 let mut snapshot = match state.data.lock() {
                     Ok(data) => data.clone(),
                     Err(_) => {
