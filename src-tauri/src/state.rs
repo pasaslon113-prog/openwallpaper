@@ -145,4 +145,22 @@ mod tests {
         assert!(loaded.data_file.is_file());
         assert!(!loaded.data_file.with_extension("json.tmp").exists());
     }
+    #[test]
+    fn corrupt_settings_are_backed_up_and_reported() {
+        let temp = tempfile::tempdir().unwrap();
+        let data_file = temp.path().join("openwallpaper.json");
+        std::fs::write(&data_file, "{ this is not valid json").unwrap();
+
+        let loaded = AppState::load(temp.path().to_path_buf()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&data_file).unwrap(), "{ this is not valid json");
+        let backups: Vec<_> = std::fs::read_dir(temp.path()).unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("openwallpaper.corrupt-"))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert!(!loaded.startup_errors.lock().unwrap().is_empty());
+        assert_eq!(loaded.data.lock().unwrap().schema_version, 1);
+    }
 }
