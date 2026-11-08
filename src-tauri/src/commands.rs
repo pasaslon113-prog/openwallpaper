@@ -123,7 +123,8 @@ pub async fn rescan_library(app: AppHandle, state: tauri::State<'_, AppState>) -
 }
 
 #[tauri::command]
-pub fn add_web_wallpaper(state: tauri::State<'_, AppState>, url: String, title: String) -> Result<WallpaperItem, String> {
+pub async fn add_web_wallpaper(state: tauri::State<'_, AppState>, url: String, title: String) -> Result<WallpaperItem, String> {
+    let _scan_guard = state.library_scan_lock.lock().await;
     let parsed = url::Url::parse(&url).map_err(|_| "Некорректный URL".to_string())?;
     if !matches!(parsed.scheme(), "https" | "http") { return Err("Разрешены только HTTP и HTTPS".into()); }
     let safe_title = title.trim();
