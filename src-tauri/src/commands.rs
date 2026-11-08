@@ -535,8 +535,13 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
     // Remove surfaces that belonged to disconnected/renumbered monitors only
     // after replacements were attempted. A failed replacement on an unchanged
     // monitor remains active and is intentionally retained.
+    let active_monitor_ids: std::collections::HashSet<String> = current.iter()
+        .map(|monitor| monitor.id.clone()).collect();
     let active_labels: std::collections::HashSet<String> = state.active_surfaces.lock()
-        .map(|surfaces| surfaces.values().cloned().collect())
+        .map(|surfaces| surfaces.iter()
+            .filter(|(monitor_id, _)| active_monitor_ids.contains(*monitor_id))
+            .map(|(_, label)| label.clone())
+            .collect())
         .unwrap_or_default();
     let stale_labels: Vec<String> = previous_labels.difference(&active_labels).cloned().collect();
     if let Ok(mut players) = state.playback.lock() {
@@ -548,8 +553,6 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
         }
     }
 
-    let active_monitor_ids: std::collections::HashSet<String> = current.iter()
-        .map(|monitor| monitor.id.clone()).collect();
     if let Ok(mut surfaces) = state.active_surfaces.lock() {
         surfaces.retain(|monitor_id, _| active_monitor_ids.contains(monitor_id));
     }
