@@ -10,6 +10,9 @@ use std::{
 pub struct AppState {
     pub data: Mutex<PersistedData>,
     pub playback: Mutex<HashMap<String, MpvPlayer>>,
+    /// Active desktop surface label per monitor. Labels are staged uniquely so a new surface
+    /// can be prepared before the currently visible wallpaper is replaced.
+    pub active_surfaces: Mutex<HashMap<String, String>>,
     pub data_file: PathBuf,
     pub app_data_dir: PathBuf,
     pub paused: Mutex<bool>,
@@ -31,6 +34,7 @@ impl AppState {
         Ok(Self {
             data: Mutex::new(data),
             playback: Mutex::new(HashMap::new()),
+            active_surfaces: Mutex::new(HashMap::new()),
             data_file,
             app_data_dir,
             paused: Mutex::new(false),
