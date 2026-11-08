@@ -20,6 +20,8 @@ pub struct AppState {
     pub library_scan_lock: Mutex<()>,
     /// True when the initial library scan has either completed or failed.
     pub library_scan_complete: AtomicBool,
+    /// Startup and restore failures retained until the UI explicitly acknowledges them.
+    pub startup_errors: Mutex<Vec<String>>,
     save_lock: Mutex<()>,
 }
 
@@ -43,6 +45,7 @@ impl AppState {
             manual_paused: Mutex::new(false),
             library_scan_lock: Mutex::new(()),
             library_scan_complete: AtomicBool::new(false),
+            startup_errors: Mutex::new(Vec::new()),
             save_lock: Mutex::new(()),
         })
     }
