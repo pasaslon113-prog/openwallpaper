@@ -30,8 +30,8 @@ impl AppState {
         fs::create_dir_all(&app_data_dir)?;
         let data_file = app_data_dir.join("openwallpaper.json");
         let (data, startup_errors) = if data_file.exists() {
-            let raw = fs::read_to_string(&data_file)?;
-            match serde_json::from_str::<PersistedData>(&raw) {
+            let raw = fs::read(&data_file)?;
+            match serde_json::from_slice::<PersistedData>(&raw) {
                 Ok(data) => (data, Vec::new()),
                 Err(error) => {
                     // Preserve the original file instead of silently discarding user data.
@@ -162,5 +162,24 @@ mod tests {
         assert_eq!(backups.len(), 1);
         assert!(!loaded.startup_errors.lock().unwrap().is_empty());
         assert_eq!(loaded.data.lock().unwrap().schema_version, 1);
+    }
+
+    #[test]
+    fn non_utf8_settings_are_backed_up_instead_of_blocking_startup() {
+        let temp = tempfile::tempdir().unwrap();
+        let data_file = temp.path().join("openwallpaper.json");
+        let corrupt = vec![0xff, 0xfe, 0x00, 0x7b];
+        std::fs::write(&data_file, &corrupt).unwrap();
+
+        let loaded = AppState::load(temp.path().to_path_buf()).unwrap();
+
+        assert_eq!(std::fs::read(&data_file).unwrap(), corrupt);
+        let backups: Vec<_> = std::fs::read_dir(temp.path()).unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("openwallpaper.corrupt-"))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert!(!loaded.startup_errors.lock().unwrap().is_empty());
     }
 }
