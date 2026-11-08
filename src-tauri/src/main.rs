@@ -10,6 +10,7 @@ mod steam;
 mod windows;
 
 use state::AppState;
+use std::sync::atomic::Ordering;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -86,15 +87,24 @@ fn main() {
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let state = app_handle.state::<AppState>();
-                let Ok(_scan_guard) = state.library_scan_lock.lock() else { return; };
+                let Ok(_scan_guard) = state.library_scan_lock.lock() else {
+                    state.library_scan_complete.store(true, Ordering::Release);
+                    let _ = app_handle.emit("ow:restore-error", serde_json::json!({
+                        "message": "Не удалось получить блокировку сканирования библиотеки",
+                    }));
+                    let _ = app_handle.emit("ow:library-ready", ());
+                    return;
+                };
                 let mut snapshot = match state.data.lock() {
                     Ok(data) => data.clone(),
                     Err(_) => return,
                 };
                 if let Err(error) = library::scan_library(&mut snapshot, &state.app_data_dir.join("thumbnails")) {
+                    state.library_scan_complete.store(true, Ordering::Release);
                     let _ = app_handle.emit("ow:restore-error", serde_json::json!({
                         "message": format!("Не удалось просканировать библиотеку: {error}"),
                     }));
+                    let _ = app_handle.emit("ow:library-ready", ());
                     return;
                 }
                 {
@@ -115,6 +125,7 @@ fn main() {
                         "message": format!("Не удалось сохранить индекс библиотеки: {error}"),
                     }));
                 }
+                state.library_scan_complete.store(true, Ordering::Release);
                 let _ = app_handle.emit("ow:library-ready", ());
                 drop(_scan_guard);
 
