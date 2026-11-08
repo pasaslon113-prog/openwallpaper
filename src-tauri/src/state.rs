@@ -29,11 +29,25 @@ impl AppState {
     pub fn load(app_data_dir: PathBuf) -> anyhow::Result<Self> {
         fs::create_dir_all(&app_data_dir)?;
         let data_file = app_data_dir.join("openwallpaper.json");
-        let data = if data_file.exists() {
+        let (data, startup_errors) = if data_file.exists() {
             let raw = fs::read_to_string(&data_file)?;
-            serde_json::from_str(&raw).unwrap_or_default()
+            match serde_json::from_str::<PersistedData>(&raw) {
+                Ok(data) => (data, Vec::new()),
+                Err(error) => {
+                    // Preserve the original file instead of silently discarding user data.
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default().as_secs();
+                    let backup = app_data_dir.join(format!("openwallpaper.corrupt-{timestamp}.json"));
+                    fs::copy(&data_file, &backup)?;
+                    (
+                        PersistedData::default(),
+                        vec![format!("Файл настроек повреждён. Копия сохранена: {}. Причина: {error}", backup.display())],
+                    )
+                }
+            }
         } else {
-            PersistedData::default()
+            (PersistedData::default(), Vec::new())
         };
         Ok(Self {
             data: Mutex::new(data),
@@ -45,7 +59,7 @@ impl AppState {
             manual_paused: Mutex::new(false),
             library_scan_lock: Mutex::new(()),
             library_scan_complete: AtomicBool::new(false),
-            startup_errors: Mutex::new(Vec::new()),
+            startup_errors: Mutex::new(startup_errors),
             save_lock: Mutex::new(()),
         })
     }
