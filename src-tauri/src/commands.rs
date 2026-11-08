@@ -189,7 +189,7 @@ pub async fn update_settings(app: AppHandle, state: tauri::State<'_, AppState>, 
     let settings = settings.normalized();
 
     #[cfg(windows)]
-    set_autostart(settings.autostart).map_err(|e| e.to_string())?;
+    set_autostart(settings.autostart, settings.start_minimized).map_err(|e| e.to_string())?;
 
     let (previous, assignments) = {
         let mut data = state.data.lock().map_err(|e| e.to_string())?;
@@ -569,7 +569,7 @@ fn next_wallpaper_surface_label(monitor_id: &str) -> String {
 }
 
 #[cfg(windows)]
-fn set_autostart(enabled: bool) -> anyhow::Result<()> {
+fn set_autostart(enabled: bool, start_minimized: bool) -> anyhow::Result<()> {
     use winreg::{enums::HKEY_CURRENT_USER, RegKey};
     let root = RegKey::predef(HKEY_CURRENT_USER);
     let (key, _) = root.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Run")?;
