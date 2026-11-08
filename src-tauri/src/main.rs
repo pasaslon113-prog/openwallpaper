@@ -196,6 +196,7 @@ fn main() {
             commands::get_library,
             commands::is_library_scan_complete,
             commands::get_pause_state,
+            commands::take_startup_errors,
             commands::get_settings,
             commands::get_collections,
             commands::get_monitors,
