@@ -101,7 +101,7 @@ fn main() {
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let state = app_handle.state::<AppState>();
-                let Ok(_scan_guard) = state.library_scan_lock.lock() else {
+                let Ok(_scan_guard) = state.library_scan_lock.blocking_lock() else {
                     state.library_scan_complete.store(true, Ordering::Release);
                     report_restore_error(&app_handle, serde_json::json!({
                         "message": "Не удалось получить блокировку сканирования библиотеки",
