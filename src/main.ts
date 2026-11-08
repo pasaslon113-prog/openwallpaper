@@ -329,8 +329,9 @@ async function boot(): Promise<void> {
   try {
     await listen<boolean>("ow:pause", (event) => { state.paused = event.payload; render(); });
     await listen<{ paused: boolean }>("ow:pause-state", (event) => { state.paused = event.payload.paused; render(); });
-    await listen<{ message: string }>("ow:restore-error", (event) => {
-      notify(`Не удалось восстановить обои: ${event.payload.message}`);
+    await listen("ow:restore-error", async () => {
+      const errors = await invoke<string[]>("take_startup_errors");
+      if (errors.length) notify(errors.map((message) => `Ошибка OpenWallpaper: ${message}`).join(" · "));
     });
     await listen("ow:library-ready", () => { void refresh(); });
     await refresh();
@@ -345,6 +346,11 @@ async function boot(): Promise<void> {
     // first event may be lost. Read the actual runtime state during boot.
     state.paused = await invoke<boolean>("get_pause_state");
     render();
+
+    const startupErrors = await invoke<string[]>("take_startup_errors");
+    if (startupErrors.length) {
+      notify(startupErrors.map((message) => `Ошибка OpenWallpaper: ${message}`).join(" · "));
+    }
   } catch (error) {
     app.innerHTML = `<div class="startup-error"><h1>OpenWallpaper не смог запуститься</h1><p>${esc(error)}</p><p>Проверьте права приложения и перезапустите его.</p></div>`;
   }
