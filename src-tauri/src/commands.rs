@@ -6,7 +6,7 @@ use crate::{
     steam,
     windows::desktop,
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::atomic::{AtomicU64, Ordering}};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -211,16 +211,38 @@ pub async fn apply_wallpaper(app: AppHandle, state: tauri::State<'_, AppState>, 
     };
     if selected.is_empty() { return Err("Выбранный монитор не найден".into()); }
 
-    let mut created = Vec::new();
+    let mut applied = Vec::new();
+    let mut failures = Vec::new();
+
     for monitor in selected {
-        let runtime = build_runtime_wallpaper(&item, &settings, &monitor.id, paused).map_err(|e| e.to_string())?;
-        let label = wallpaper_window_label(&monitor.id);
-        if let Some(old) = app.get_webview_window(&label) {
-            if let Ok(mut players) = state.playback.lock() { players.remove(&label); }
-            let _ = old.destroy();
-        }
-        let init = format!("if (window === window.top) {{ window.__OPEN_WALLPAPER__ = {}; }}", serde_json::to_string(&runtime).map_err(|e| e.to_string())?);
-        let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("wallpaper.html".into()))
+        let runtime = match build_runtime_wallpaper(&item, &settings, &monitor.id, paused) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                failures.push(format!("{}: {}", monitor.name, error));
+                continue;
+            }
+        };
+
+        // Keep the current surface alive while the replacement is prepared. A unique
+        // staging label avoids destroying the working wallpaper before the new one
+        // has successfully attached to WorkerW and initialized its playback engine.
+        let previous_label = state.active_surfaces.lock()
+            .map_err(|e| e.to_string())?
+            .get(&monitor.id)
+            .cloned()
+            .or_else(|| {
+                let legacy = wallpaper_window_label(&monitor.id);
+                app.get_webview_window(&legacy).map(|_| legacy)
+            });
+        let label = next_wallpaper_surface_label(&monitor.id);
+        let init = match serde_json::to_string(&runtime) {
+            Ok(config) => format!("if (window === window.top) {{ window.__OPEN_WALLPAPER__ = {}; }}", config),
+            Err(error) => {
+                failures.push(format!("{}: {}", monitor.name, error));
+                continue;
+            }
+        };
+        let window = match WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("wallpaper.html".into()))
             .title("OpenWallpaper Surface")
             .decorations(false)
             .resizable(false)
@@ -228,33 +250,102 @@ pub async fn apply_wallpaper(app: AppHandle, state: tauri::State<'_, AppState>, 
             .visible(false)
             .initialization_script(&init)
             .build()
-            .map_err(|e| format!("Не удалось создать поверхность рабочего стола: {e}"))?;
-        window.set_position(PhysicalPosition::new(monitor.x, monitor.y)).map_err(|e| e.to_string())?;
-        window.set_size(PhysicalSize::new(monitor.width, monitor.height)).map_err(|e| e.to_string())?;
-
-        #[cfg(windows)]
         {
-            let hwnd = window.hwnd().map_err(|e| e.to_string())?;
-            desktop::attach_to_desktop(hwnd.0, monitor.x, monitor.y, monitor.width, monitor.height).map_err(|e| e.to_string())?;
-            if runtime.kind != WallpaperKind::Web && runtime.kind != WallpaperKind::Scene {
-                let mut player = MpvPlayer::start(hwnd.0 as isize, &runtime, &state.app_data_dir).map_err(|e| e.to_string())?;
-                if paused { let _ = player.set_paused(true); }
-                state.playback.lock().map_err(|e| e.to_string())?.insert(label.clone(), player);
+            Ok(window) => window,
+            Err(error) => {
+                failures.push(format!("{}: не удалось создать поверхность: {}", monitor.name, error));
+                continue;
+            }
+        };
+
+        let setup_result: Result<Option<MpvPlayer>, String> = (|| {
+            window.set_position(PhysicalPosition::new(monitor.x, monitor.y)).map_err(|e| e.to_string())?;
+            window.set_size(PhysicalSize::new(monitor.width, monitor.height)).map_err(|e| e.to_string())?;
+
+            #[cfg(windows)]
+            {
+                let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+                desktop::attach_to_desktop(hwnd.0, monitor.x, monitor.y, monitor.width, monitor.height)
+                    .map_err(|e| e.to_string())?;
+                if runtime.kind != WallpaperKind::Web && runtime.kind != WallpaperKind::Scene {
+                    let mut player = MpvPlayer::start(hwnd.0 as isize, &runtime, &state.app_data_dir)
+                        .map_err(|e| e.to_string())?;
+                    if paused {
+                        player.set_paused(true).map_err(|e| e.to_string())?;
+                    }
+                    Ok(Some(player))
+                } else {
+                    Ok(None)
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = desktop::attach_to_desktop((), monitor.x, monitor.y, monitor.width, monitor.height);
+                Ok(None)
+            }
+        })();
+
+        let player = match setup_result {
+            Ok(player) => player,
+            Err(error) => {
+                let _ = window.destroy();
+                failures.push(format!("{}: {}", monitor.name, error));
+                continue;
+            }
+        };
+
+        if let Err(error) = window.show() {
+            let _ = window.destroy();
+            failures.push(format!("{}: не удалось показать поверхность: {}", monitor.name, error));
+            continue;
+        }
+
+        // Persist the new assignment before retiring the old surface. If persistence
+        // fails, roll the in-memory assignment back and keep the old wallpaper running.
+        let previous_assignment = {
+            let mut data = state.data.lock().map_err(|e| e.to_string())?;
+            data.settings.monitor_wallpapers.insert(monitor.id.clone(), wallpaper_id.clone())
+        };
+        if let Err(error) = state.save() {
+            {
+                let mut data = state.data.lock().map_err(|e| e.to_string())?;
+                match previous_assignment {
+                    Some(previous) => { data.settings.monitor_wallpapers.insert(monitor.id.clone(), previous); }
+                    None => { data.settings.monitor_wallpapers.remove(&monitor.id); }
+                }
+            }
+            let _ = window.destroy();
+            failures.push(format!("{}: не удалось сохранить назначение обоев: {}", monitor.name, error));
+            continue;
+        }
+
+        {
+            let mut surfaces = state.active_surfaces.lock().map_err(|e| e.to_string())?;
+            surfaces.insert(monitor.id.clone(), label.clone());
+        }
+        {
+            let mut players = state.playback.lock().map_err(|e| e.to_string())?;
+            if let Some(player) = player { players.insert(label.clone(), player); }
+            if let Some(old_label) = previous_label.as_ref() {
+                players.remove(old_label);
             }
         }
-        #[cfg(not(windows))]
-        {
-            let _ = desktop::attach_to_desktop((), monitor.x, monitor.y, monitor.width, monitor.height);
+        if let Some(old_label) = previous_label {
+            if old_label != label {
+                if let Some(old_window) = app.get_webview_window(&old_label) {
+                    let _ = old_window.destroy();
+                }
+            }
         }
-        window.show().map_err(|e| e.to_string())?;
-        created.push(monitor.name);
-        {
-            let mut data = state.data.lock().map_err(|e| e.to_string())?;
-            data.settings.monitor_wallpapers.insert(monitor.id.clone(), wallpaper_id.clone());
-        }
+        applied.push(monitor.name);
     }
-    state.save().map_err(|e| e.to_string())?;
-    Ok(format!("Обои применены: {}", created.join(", ")))
+
+    if !failures.is_empty() {
+        let detail = failures.join("; ");
+        if applied.is_empty() { return Err(detail); }
+        return Err(format!("Обои применены частично ({}): {}", applied.join(", "), detail));
+    }
+    Ok(format!("Обои применены: {}", applied.join(", ")))
 }
 
 #[tauri::command]
@@ -384,6 +475,7 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
         if window.label().starts_with("wallpaper-") { let _ = window.destroy(); }
     }
     if let Ok(mut players) = state.playback.lock() { players.clear(); }
+    if let Ok(mut surfaces) = state.active_surfaces.lock() { surfaces.clear(); }
     if let Ok(mut data) = state.data.lock() { data.settings.monitor_wallpapers = assignments.clone(); }
     let _ = state.save();
 
@@ -426,6 +518,13 @@ fn remap_monitor_assignments(
 
 fn wallpaper_window_label(monitor_id: &str) -> String {
     format!("wallpaper-{}", blake3::hash(monitor_id.as_bytes()).to_hex()[..10].to_string())
+}
+
+fn next_wallpaper_surface_label(monitor_id: &str) -> String {
+    static NEXT_SURFACE_ID: AtomicU64 = AtomicU64::new(1);
+    let monitor_hash = &blake3::hash(monitor_id.as_bytes()).to_hex()[..10];
+    let sequence = NEXT_SURFACE_ID.fetch_add(1, Ordering::Relaxed);
+    format!("wallpaper-{}-{}", monitor_hash, sequence)
 }
 
 #[cfg(windows)]
