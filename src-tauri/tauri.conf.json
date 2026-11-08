@@ -30,7 +30,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPDATA/org.openwallpaper.desktop/**"
+          "$APPDATA/org.openwallpaper.desktop/**/*"
         ]
       }
     }
