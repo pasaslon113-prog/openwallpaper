@@ -1,12 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "wallpaper-surfaces",
-  "description": "Event listening and local asset access for wallpaper surfaces",
+  "description": "Allow wallpaper surface windows to listen for playback and pause events only",
   "windows": [
     "wallpaper-*"
   ],
   "permissions": [
-    "core:default",
     "core:event:default"
   ]
 }
