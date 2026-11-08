@@ -575,7 +575,7 @@ fn set_autostart(enabled: bool, start_minimized: bool) -> anyhow::Result<()> {
     let (key, _) = root.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Run")?;
     if enabled {
         let executable = std::env::current_exe()?;
-        let value = format!("\"{}\" --background", executable.display());
+        let value = if start_minimized { format!("\"{}\" --background", executable.display()) } else { format!("\"{}\"", executable.display()) };
         key.set_value("OpenWallpaper", &value)?;
     } else {
         let _ = key.delete_value("OpenWallpaper");
