@@ -19,12 +19,15 @@ pub fn spawn(app: AppHandle) {
             let Some(state) = app.try_state::<AppState>() else { continue; };
             if let Ok(current_monitors) = crate::commands::monitors_for_app(&app) {
                 let monitors_changed = last_monitors.as_ref().is_some_and(|previous| previous != &current_monitors);
-                let explorer_restarted = app.webview_windows().values().any(|window| {
-                    if !window.label().starts_with("wallpaper-") { return false; }
+                let active_surface_labels: Vec<String> = state.active_surfaces.lock()
+                    .map(|surfaces| surfaces.values().cloned().collect())
+                    .unwrap_or_default();
+                let explorer_restarted = active_surface_labels.iter().any(|label| {
+                    let Some(window) = app.get_webview_window(label) else { return true; };
                     #[cfg(windows)]
                     { window.hwnd().map(|hwnd| !crate::windows::desktop::has_live_workerw_parent(hwnd.0)).unwrap_or(true) }
                     #[cfg(not(windows))]
-                    { false }
+                    { let _ = window; false }
                 });
                 let recovery_ready = last_recovery.map(|instant| instant.elapsed() >= Duration::from_secs(12)).unwrap_or(true);
                 if (monitors_changed || explorer_restarted) && recovery_ready {
