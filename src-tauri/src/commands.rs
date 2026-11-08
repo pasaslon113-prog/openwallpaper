@@ -503,11 +503,19 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
 
     let assignments = remap_monitor_assignments(&previous, &current, &old_assignments);
 
-    for window in app.webview_windows().values() {
-        if window.label().starts_with("wallpaper-") { let _ = window.destroy(); }
+    // Destroy native mpv instances before their HWND hosts. Reversing this order can
+    // leave a decoder holding a dead window handle during display reconfiguration.
+    let wallpaper_labels: Vec<String> = app.webview_windows().keys()
+        .filter(|label| label.starts_with("wallpaper-"))
+        .cloned()
+        .collect();
+    if let Ok(mut players) = state.playback.lock() {
+        for label in &wallpaper_labels { players.remove(label); }
     }
-    if let Ok(mut players) = state.playback.lock() { players.clear(); }
     if let Ok(mut surfaces) = state.active_surfaces.lock() { surfaces.clear(); }
+    for label in wallpaper_labels {
+        if let Some(window) = app.get_webview_window(&label) { let _ = window.destroy(); }
+    }
     if let Ok(mut data) = state.data.lock() { data.settings.monitor_wallpapers = assignments.clone(); }
     let _ = state.save();
 
