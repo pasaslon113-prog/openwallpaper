@@ -554,6 +554,15 @@ mod tests {
     }
 
     #[test]
+    fn staged_surface_labels_are_unique_for_replacements_on_the_same_monitor() {
+        let first = next_wallpaper_surface_label("0:0:1920:1080");
+        let second = next_wallpaper_surface_label("0:0:1920:1080");
+        assert_ne!(first, second);
+        assert!(first.starts_with("wallpaper-"));
+        assert!(second.starts_with("wallpaper-"));
+    }
+
+    #[test]
     fn changing_only_audio_settings_does_not_recreate_wallpaper_windows() {
         let previous = AppSettings::default();
         let mut next = previous.clone();
