@@ -58,49 +58,63 @@ pub fn get_monitors(app: AppHandle) -> Result<Vec<MonitorInfo>, String> {
 }
 
 #[tauri::command]
-pub fn add_library_folders(app: AppHandle, state: tauri::State<'_, AppState>, paths: Vec<String>) -> Result<usize, String> {
-    let _scan_guard = state.library_scan_lock.lock().map_err(|e| e.to_string())?;
-    let mut snapshot = {
-        let mut data = state.data.lock().map_err(|e| e.to_string())?;
-        library::add_roots(&mut data, &paths).map_err(|e| e.to_string())?;
-        data.clone()
-    };
+pub async fn add_library_folders(app: AppHandle, state: tauri::State<'_, AppState>, paths: Vec<String>) -> Result<usize, String> {
+    let _scan_guard = state.library_scan_lock.lock().await;
+    let mut snapshot = state.data.lock().map_err(|e| e.to_string())?.clone();
+    library::add_roots(&mut snapshot, &paths).map_err(|e| e.to_string())?;
     let cache_dir = state.app_data_dir.join("thumbnails");
-    library::scan_library(&mut snapshot, &cache_dir).map_err(|e| e.to_string())?;
+    let worker_cache_dir = cache_dir.clone();
+    let (snapshot, count) = tokio::task::spawn_blocking(move || {
+        let count = library::scan_library(&mut snapshot, &worker_cache_dir)?;
+        Ok::<_, anyhow::Error>((snapshot, count))
+    }).await.map_err(|error| format!("Задача сканирования завершилась аварийно: {error}"))?
+      .map_err(|error| error.to_string())?;
+
+    let roots = snapshot.library_roots.clone();
     {
         let mut data = state.data.lock().map_err(|e| e.to_string())?;
         let favorites: std::collections::HashMap<String, bool> = data.wallpapers.iter()
             .map(|item| (item.id.clone(), item.favorite)).collect();
-        for item in &mut snapshot.wallpapers {
+        let mut wallpapers = snapshot.wallpapers;
+        for item in &mut wallpapers {
             if let Some(favorite) = favorites.get(&item.id) { item.favorite = *favorite; }
         }
         data.library_roots = snapshot.library_roots;
-        data.wallpapers = snapshot.wallpapers;
+        data.wallpapers = wallpapers;
     }
-    for path in paths {
-        let _ = app.asset_protocol_scope().allow_directory(PathBuf::from(path), true);
+    for root in roots {
+        let _ = app.asset_protocol_scope().allow_directory(PathBuf::from(root), true);
     }
     let _ = app.asset_protocol_scope().allow_directory(cache_dir, true);
     state.save().map_err(|e| e.to_string())?;
-    Ok(state.data.lock().map_err(|e| e.to_string())?.wallpapers.len())
+    Ok(count)
 }
 
 #[tauri::command]
-pub fn rescan_library(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<usize, String> {
-    let _scan_guard = state.library_scan_lock.lock().map_err(|e| e.to_string())?;
-    let mut snapshot = state.data.lock().map_err(|e| e.to_string())?.clone();
+pub async fn rescan_library(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let _scan_guard = state.library_scan_lock.lock().await;
+    let snapshot = state.data.lock().map_err(|e| e.to_string())?.clone();
     let cache_dir = state.app_data_dir.join("thumbnails");
-    let count = library::scan_library(&mut snapshot, &cache_dir).map_err(|e| e.to_string())?;
+    let worker_cache_dir = cache_dir.clone();
+    let (snapshot, count) = tokio::task::spawn_blocking(move || {
+        let mut snapshot = snapshot;
+        let count = library::scan_library(&mut snapshot, &worker_cache_dir)?;
+        Ok::<_, anyhow::Error>((snapshot, count))
+    }).await.map_err(|error| format!("Задача сканирования завершилась аварийно: {error}"))?
+      .map_err(|error| error.to_string())?;
+
+    let roots = snapshot.library_roots.clone();
     {
         let mut data = state.data.lock().map_err(|e| e.to_string())?;
         let favorites: std::collections::HashMap<String, bool> = data.wallpapers.iter()
             .map(|item| (item.id.clone(), item.favorite)).collect();
-        for item in &mut snapshot.wallpapers {
+        let mut wallpapers = snapshot.wallpapers;
+        for item in &mut wallpapers {
             if let Some(favorite) = favorites.get(&item.id) { item.favorite = *favorite; }
         }
-        data.wallpapers = snapshot.wallpapers;
+        data.wallpapers = wallpapers;
     }
-    for root in snapshot.library_roots {
+    for root in roots {
         let _ = app.asset_protocol_scope().allow_directory(PathBuf::from(root), true);
     }
     let _ = app.asset_protocol_scope().allow_directory(cache_dir, true);
