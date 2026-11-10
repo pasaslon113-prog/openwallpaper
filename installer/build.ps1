@@ -30,7 +30,7 @@ Pop-Location
 if ($testExit -ne 0) { throw 'Rust tests failed.' }
 
 Write-Host 'Building NSIS and MSI installers...' -ForegroundColor Cyan
-npm run tauri build -- --bundles nsis,wix
+npm run tauri build -- --bundles nsis,msi
 if ($LASTEXITCODE -ne 0) { throw 'Tauri packaging failed.' }
 
 $bundleRoot = Join-Path $PWD 'src-tauri/target/release/bundle'
