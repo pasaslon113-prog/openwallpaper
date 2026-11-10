@@ -16,7 +16,7 @@ This repository does not contain Wallpaper Engine source code, proprietary asset
 - Steam Workshop search through the public Steam Community browse page, item details through the official `ISteamRemoteStorage/GetPublishedFileDetails` endpoint, and subscription hand-off through the Steam client URI. Subscription and downloading are performed by Steam itself.
 - One wallpaper surface per monitor, an individual wallpaper assignment per monitor and a per-monitor FPS setting.
 - Win32 WorkerW desktop placement, a tray menu, close-to-tray behaviour, Windows startup registration, saved-wallpaper restoration, manual pause/resume, game-process pause, lock-screen process detection and optional battery pause. During Windows sleep, the operating system suspends the app and playback; normal monitoring resumes after wake.
-- JSON settings, Rust unit tests, Windows CI workflow and NSIS/WiX bundle configuration.
+- JSON settings, Rust unit tests, Windows CI workflow and NSIS/MSI bundle configuration.
 
 ## Architecture
 
@@ -79,7 +79,7 @@ npm run build
 Build Windows installers:
 
 ```powershell
-npm run tauri build -- --bundles nsis,wix
+npm run tauri build -- --bundles nsis,msi
 ```
 
 The installers are generated under `src-tauri/target/release/bundle/`.
@@ -173,7 +173,7 @@ Wallpaper Engine compatibility is import-by-file, not a binary project converter
 
 ## Tests
 
-Fourteen Rust unit tests cover file-type recognition, stable IDs, scene path traversal rejection, valid image-based slideshow discovery, preserving manually added web wallpapers during rescans, thumbnail-cache reuse, settings normalization and persistence, avoiding wallpaper restarts for audio-only changes, Workshop ID parsing/validation, and monitor-window label generation. The workflow in `.github/workflows/windows.yml` runs the Rust tests and builds the frontend/Windows installers on a Windows runner.
+Fifteen Rust unit tests cover file-type recognition, stable IDs, scene path traversal rejection, valid image-based slideshow discovery, preserving manually added web wallpapers during rescans, thumbnail-cache reuse, settings normalization and persistence, avoiding wallpaper restarts for audio-only changes, Workshop ID parsing/validation, and monitor-window label generation. The workflow in `.github/workflows/windows-validation.yml` runs the Rust tests and builds the frontend/Windows installers on a Windows runner.
 
 ## License
 
@@ -192,7 +192,7 @@ The repository includes a Windows GitHub Actions workflow. After the source is p
    ```
 
 3. Open **GitHub → Releases**, review the draft `OpenWallpaper v0.1.0`, and publish it when ready.
-4. Download the `.exe` (NSIS) or `.msi` (WiX) installer from that release.
+4. Download the `.exe` (NSIS) or `.msi` (MSI) installer from that release.
 
 The first public build should be treated as an experimental MVP. It is not code-signed. Windows may display SmartScreen warnings for unsigned builds. The media engine dynamically loads `mpv-2.dll`; the libmpv runtime is intentionally not bundled and must be obtained from a trusted official distribution in accordance with its licence. Without it, HTML wallpapers can work, but video/GIF/image/slideshow playback will report that the runtime is unavailable.
 
