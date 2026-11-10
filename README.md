@@ -173,7 +173,7 @@ Wallpaper Engine compatibility is import-by-file, not a binary project converter
 
 ## Tests
 
-Fourteen Rust unit tests cover file-type recognition, stable IDs, scene path traversal rejection, valid image-based slideshow discovery, preserving manually added web wallpapers during rescans, thumbnail-cache reuse, settings normalization and persistence, avoiding wallpaper restarts for audio-only changes, Workshop ID parsing/validation, and monitor-window label generation. The workflow in `.github/workflows/windows.yml` runs the Rust tests and builds the frontend/Windows installers on a Windows runner.
+Fifteen Rust unit tests cover file-type recognition, stable IDs, scene path traversal rejection, valid image-based slideshow discovery, preserving manually added web wallpapers during rescans, thumbnail-cache reuse, settings normalization and persistence, avoiding wallpaper restarts for audio-only changes, Workshop ID parsing/validation, and monitor-window label generation. The workflow in `.github/workflows/windows.yml` runs the Rust tests and builds the frontend/Windows installers on a Windows runner.
 
 ## License
 
