@@ -24,7 +24,13 @@ impl AppState {
         let data_file = app_data_dir.join("openwallpaper.json");
         let data = if data_file.exists() {
             let raw = fs::read_to_string(&data_file)?;
-            serde_json::from_str(&raw).unwrap_or_default()
+            serde_json::from_str(&raw).map_err(|error| {
+                anyhow::anyhow!(
+                    "Не удалось прочитать настройки OpenWallpaper ({}): {}. Файл не был перезаписан. Сохраните его резервную копию и проверьте JSON.",
+                    data_file.display(),
+                    error
+                )
+            })?
         } else {
             PersistedData::default()
         };
@@ -96,10 +102,23 @@ fn replace_file(source: &std::path::Path, destination: &std::path::Path) -> anyh
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::AppState;
+
+    #[test]
+    fn corrupt_settings_are_reported_instead_of_silently_reset() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("openwallpaper.json");
+        std::fs::write(&path, "{ invalid json").unwrap();
+
+        let error = match AppState::load(temp.path().to_path_buf()) {
+            Ok(_) => panic!("corrupt settings must not be silently replaced"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("не был перезаписан"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "{ invalid json");
+    }
 
     #[test]
     fn settings_file_can_be_saved_and_loaded_again() {
