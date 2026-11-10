@@ -352,7 +352,7 @@ fn build_runtime_wallpaper(item: &WallpaperItem, settings: &AppSettings, monitor
 fn monitors_for_app(app: &AppHandle) -> anyhow::Result<Vec<MonitorInfo>> {
     let window = app.get_webview_window("main").ok_or_else(|| anyhow::anyhow!("Главное окно приложения недоступно"))?;
     let monitors = window.available_monitors()?;
-    let primary = window.primary_monitor()?.map(|m| m.position());
+    let primary = window.primary_monitor()?.map(|m| *m.position());
     Ok(monitors.into_iter().enumerate().map(|(index, monitor)| {
         let pos = monitor.position();
         let size = monitor.size();
