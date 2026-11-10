@@ -2,7 +2,7 @@ name: Windows validation and release
 
 on:
   push:
-    branches: [main, master, ci/windows-validation]
+    branches: [main, master]
     tags: ['v*']
   pull_request:
     branches: [main, master]
@@ -11,8 +11,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: openwallpaper-windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
+    name: Validate and package (Windows x64)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,11 +27,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Install dependencies
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Install frontend dependencies
         run: npm install
-      - name: Frontend typecheck and bundle
+      - name: Build frontend
         run: npm run build
-      - name: Rust tests
+      - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
       - name: Build Windows installer
         run: npm run tauri build -- --bundles nsis
