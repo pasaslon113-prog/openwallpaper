@@ -366,7 +366,7 @@ fn monitors_for_app(app: &AppHandle) -> anyhow::Result<Vec<MonitorInfo>> {
             width: size.width,
             height: size.height,
             scale_factor: monitor.scale_factor(),
-            primary: primary.map(|p| p == pos).unwrap_or(index == 0),
+            primary: primary.map(|p| p == *pos).unwrap_or(index == 0),
         }
     }).collect())
 }
