@@ -25,11 +25,13 @@ fn main() {
             let discovered_roots = windows::steam_paths::discover_wallpaper_engine_roots();
             #[cfg(not(windows))]
             let discovered_roots: Vec<String> = Vec::new();
-            {
-                let mut data = state.data.lock().map_err(|_| "state lock poisoned")?;
-                library::add_roots(&mut data, &discovered_roots)?;
-                library::scan_library(&mut data, &app_data.join("thumbnails"))?;
-            }
+            // Scan a detached snapshot: a large Steam Workshop library must not hold
+            // the shared state mutex while files and previews are being inspected.
+            let mut startup_snapshot = state.data.lock()
+                .map_err(|_| "state lock poisoned")?.clone();
+            library::add_roots(&mut startup_snapshot, &discovered_roots)?;
+            library::scan_library(&mut startup_snapshot, &app_data.join("thumbnails"))?;
+            *state.data.lock().map_err(|_| "state lock poisoned")? = startup_snapshot;
             app.manage(state);
             {
                 let state = app.state::<AppState>();
