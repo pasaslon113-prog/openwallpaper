@@ -38,7 +38,7 @@ impl MpvPlayer {
         let pointers: Vec<*const c_char> = args.iter().map(|value| value.as_ptr())
             .chain(std::iter::once(std::ptr::null())).collect();
 
-        let library = load_mpv_library()?;
+        let library = load_mpv_library(app_data)?;
         unsafe {
             let create: MpvCreate = *library.get(b"mpv_create\0")?;
             let set_option: MpvSetOptionString = *library.get(b"mpv_set_option_string\0")?;
@@ -134,11 +134,17 @@ impl MpvPlayer {
 }
 
 #[cfg(windows)]
-fn load_mpv_library() -> anyhow::Result<Library> {
+fn load_mpv_library(app_data: &Path) -> anyhow::Result<Library> {
     let mut candidates = Vec::new();
     if let Ok(path) = std::env::var("OPENWALLPAPER_MPV") { candidates.push(PathBuf::from(path)); }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() { candidates.push(parent.join("mpv-2.dll")); }
+    }
+    candidates.push(app_data.join("mpv-runtime").join("mpv-2.dll"));
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("resources").join("mpv-runtime").join("mpv-2.dll"));
+        }
     }
     candidates.push(PathBuf::from("mpv-2.dll"));
     let mut errors = Vec::new();
@@ -148,7 +154,7 @@ fn load_mpv_library() -> anyhow::Result<Library> {
             Err(error) => errors.push(format!("{}: {}", candidate.display(), error)),
         }
     }
-    anyhow::bail!("Не найдена mpv-2.dll. Установите официальную сборку libmpv и положите DLL рядом с OpenWallpaper.exe. {}", errors.join("; "))
+    anyhow::bail!("Не найдена встроенная библиотека mpv-2.dll. Переустановите OpenWallpaper или проверьте целостность папки resources/mpv-runtime. {}", errors.join("; "))
 }
 
 
