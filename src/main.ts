@@ -71,7 +71,7 @@ function shell(content: string): string {
         <div class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav class="nav">
           <button data-page="library" class="nav-item ${state.page === "library" ? "active" : ""}"><span class="nav-glyph">▦</span> Библиотека <span class="nav-count">${state.wallpapers.length}</span></button>
-          <button data-page="workshop" class="nav-item ${state.page === "workshop" ? "active" : ""}"><span class="nav-glyph">◈</span> Steam Workshop</button>
+          <button data-page="workshop" class="nav-item ${state.page === "workshop" ? "active" : ""}"><span class="nav-glyph">◈</span> Workshop WE</button>
           <button data-page="collections" class="nav-item ${state.page === "collections" ? "active" : ""}"><span class="nav-glyph">▤</span> Подборки <span class="nav-count">${state.collections.length}</span></button>
         </nav>
         <div class="sidebar-spacer"></div>
@@ -84,7 +84,7 @@ function shell(content: string): string {
       </aside>
       <main class="main-area">
         <header class="topbar" data-tauri-drag-region>
-          <div class="breadcrumbs" data-tauri-drag-region><span>OpenWallpaper</span><i>/</i><b>${({ library: "Библиотека", workshop: "Steam Workshop", collections: "Подборки", settings: "Настройки" } as Record<Page, string>)[state.page]}</b></div>
+          <div class="breadcrumbs" data-tauri-drag-region><span>OpenWallpaper</span><i>/</i><b>${({ library: "Библиотека", workshop: "Workshop WE", collections: "Подборки", settings: "Настройки" } as Record<Page, string>)[state.page]}</b></div>
           <div class="top-actions">
             <button class="icon-button ${state.paused ? "is-paused" : ""}" data-action="toggle-pause" title="Пауза / продолжить">${state.paused ? "▶" : "Ⅱ"}</button>
             <button class="window-control" data-action="minimize" title="Свернуть">−</button>
@@ -121,7 +121,7 @@ function libraryPage(): string {
   });
   const selected = selectedWallpaper();
   return `<div class="page-heading">
-    <div><div class="eyebrow">ВАША КОЛЛЕКЦИЯ</div><h1>Библиотека обоев</h1><p>Все ваши фоны в одном месте. Импортируйте файлы или выбирайте обои из Steam Workshop.</p></div>
+    <div><div class="eyebrow">НЕЗАВИСИМАЯ БИБЛИОТЕКА</div><h1>Библиотека обоев</h1><p>Встроенные анимированные фоны OpenWallpaper и ваши собственные обои. Wallpaper Engine не требуется.</p></div>
     <div class="heading-actions"><button class="button button-quiet" data-action="add-web">＋ Добавить URL</button><button class="button button-primary" data-action="import">⇧ Импортировать папку</button></div>
   </div>
   <div class="stats-row">
@@ -158,10 +158,10 @@ function detailMarkup(item: Wallpaper): string {
 }
 
 function workshopPage(): string {
-  return `<div class="page-heading"><div><div class="eyebrow">STEAM COMMUNITY</div><h1>Steam Workshop</h1><p>Поиск публичных публикаций Wallpaper Engine. Установка выполняется самим клиентом Steam.</p></div><button class="button button-quiet" data-action="open-workshop">Открыть каталог Steam ↗</button></div>
+  return `<div class="page-heading"><div><div class="eyebrow">ВНЕШНИЙ КАТАЛОГ STEAM</div><h1>Workshop Wallpaper Engine</h1><p>Здесь можно просматривать публичный каталог Wallpaper Engine. Скачивание публикаций выполняет Steam и зависит от прав аккаунта на приложение.</p></div><button class="button button-quiet" data-action="open-workshop">Открыть каталог Steam ↗</button></div>
     <div class="workshop-search"><div class="search-box"><span>⌕</span><input id="workshop-search" type="search" placeholder="Найти обои в Workshop..." value="${esc(state.workshopQuery)}"></div><button class="button button-primary" data-action="search-workshop">Искать</button></div>
-    <div class="notice"><span>ⓘ</span><div><b>Официальная установка через Steam</b><p>OpenWallpaper не загружает закрытые файлы Workshop. Нажмите «Открыть в Steam», подпишитесь на публикацию, затем обновите библиотеку после загрузки.</p></div></div>
-    ${state.workshop.length ? `<div class="workshop-grid">${state.workshop.map((item) => `<article class="workshop-card"><div class="workshop-cover">${item.preview_url && item.preview_url.startsWith("https://") ? `<img src="${esc(item.preview_url)}" alt="" loading="lazy">` : `<div class="cover-placeholder kind-video"><span>STEAM WORKSHOP</span></div>`}</div><div class="workshop-card-body"><b>${esc(item.title)}</b><small>ID ${esc(item.published_file_id)} · ${item.installed ? "Уже загружено" : "Не установлено"}</small><button class="button ${item.installed ? "button-outline" : "button-primary"}" data-action="open-item" data-id="${esc(item.published_file_id)}">${item.installed ? "Открыть в Steam" : "Подписаться в Steam"} ↗</button></div></article>`).join("")}</div>` : `<div class="empty-state workshop-empty"><div class="empty-icon">◈</div><h3>Каталог Workshop</h3><p>Введите запрос для поиска публикаций Wallpaper Engine. Доступность выдачи зависит от Steam Community.</p><button class="button button-outline" data-action="search-workshop">Показать популярное</button></div>`}`;
+    <div class="notice"><span>ⓘ</span><div><b>Загрузка через Steam ограничена правами аккаунта</b><p>Без лицензии Wallpaper Engine можно просматривать открытые карточки и превью, но Steam может не разрешить подписку и скачивание. OpenWallpaper не обходит ограничения Steam. Три встроенных анимированных обоев уже доступны в библиотеке без Steam.</p></div></div>
+    ${state.workshop.length ? `<div class="workshop-grid">${state.workshop.map((item) => `<article class="workshop-card"><div class="workshop-cover">${item.preview_url && item.preview_url.startsWith("https://") ? `<img src="${esc(item.preview_url)}" alt="" loading="lazy">` : `<div class="cover-placeholder kind-video"><span>STEAM WORKSHOP</span></div>`}</div><div class="workshop-card-body"><b>${esc(item.title)}</b><small>ID ${esc(item.published_file_id)} · ${item.installed ? "Уже загружено" : "Не установлено"}</small><button class="button ${item.installed ? "button-outline" : "button-primary"}" data-action="open-item" data-id="${esc(item.published_file_id)}">Открыть страницу Steam ↗</button></div></article>`).join("")}</div>` : `<div class="empty-state workshop-empty"><div class="empty-icon">◈</div><h3>Каталог Workshop</h3><p>Введите запрос для поиска публикаций Wallpaper Engine. Доступность выдачи зависит от Steam Community.</p><button class="button button-outline" data-action="search-workshop">Показать популярное</button></div>`}`;
 }
 
 function collectionsPage(): string {
@@ -327,12 +327,34 @@ function numberValue(id: string, fallback: number): number { return Number(docum
 
 async function boot(): Promise<void> {
   try {
-    await refresh();
     await listen<boolean>("ow:pause", (event) => { state.paused = event.payload; render(); });
     await listen<{ paused: boolean }>("ow:pause-state", (event) => { state.paused = event.payload.paused; render(); });
+    await listen("ow:restore-error", async () => {
+      const errors = await invoke<string[]>("take_startup_errors");
+      if (errors.length) notify(errors.map((message) => `Ошибка OpenWallpaper: ${message}`).join(" · "));
+    });
+    await listen("ow:library-ready", () => { void refresh(); });
+    await refresh();
+
+    // Startup events can arrive before WebView2 registers listeners. Query the
+    // durable scan flag after listeners are attached to avoid a stale empty UI.
+    if (await invoke<boolean>("is_library_scan_complete")) {
+      await refresh();
+    }
+
+    // The system watcher initializes pause state before the UI is ready, so its
+    // first event may be lost. Read the actual runtime state during boot.
+    state.paused = await invoke<boolean>("get_pause_state");
+    render();
+
+    const startupErrors = await invoke<string[]>("take_startup_errors");
+    if (startupErrors.length) {
+      notify(startupErrors.map((message) => `Ошибка OpenWallpaper: ${message}`).join(" · "));
+    }
   } catch (error) {
     app.innerHTML = `<div class="startup-error"><h1>OpenWallpaper не смог запуститься</h1><p>${esc(error)}</p><p>Проверьте права приложения и перезапустите его.</p></div>`;
   }
 }
 
 void boot();
+

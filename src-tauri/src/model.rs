@@ -42,7 +42,7 @@ pub struct WallpaperItem {
     pub file_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MonitorInfo {
     pub id: String,
     pub name: String,
@@ -55,6 +55,7 @@ pub struct MonitorInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
     pub autostart: bool,
     pub start_minimized: bool,
@@ -118,6 +119,7 @@ pub struct Collection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PersistedData {
     pub library_roots: Vec<String>,
     pub wallpapers: Vec<WallpaperItem>,
@@ -221,4 +223,20 @@ mod tests {
         assert_eq!(normalized.monitor_fps.get("monitor-a"), Some(&10));
         assert_eq!(normalized.game_processes, vec!["game.exe".to_string()]);
     }
+    #[test]
+    fn older_settings_documents_use_defaults_for_new_fields() {
+        let settings: super::AppSettings = serde_json::from_str(r#"{"fps_limit":45}"#).unwrap();
+        assert_eq!(settings.fps_limit, 45);
+        assert_eq!(settings.volume, 0);
+        assert!(settings.muted);
+        assert!(settings.monitor_wallpapers.is_empty());
+    }
+
+    #[test]
+    fn older_persisted_data_documents_fill_missing_collections_and_schema_fields() {
+        let data: super::PersistedData = serde_json::from_str(r#"{"library_roots":[],"wallpapers":[]}"#).unwrap();
+        assert!(data.collections.is_empty());
+        assert_eq!(data.schema_version, 1);
+    }
 }
+

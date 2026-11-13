@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod builtin;
 mod commands;
 mod library;
 mod model;
@@ -9,29 +10,61 @@ mod steam;
 mod windows;
 
 use state::AppState;
+use std::sync::atomic::Ordering;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager,
 };
 
+
+fn report_restore_error(app: &tauri::AppHandle, payload: serde_json::Value) {
+    let message = payload.get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Неизвестная ошибка восстановления обоев")
+        .to_string();
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut errors) = state.startup_errors.lock() {
+            errors.push(message);
+        }
+    }
+    let _ = app.emit("ow:restore-error", payload);
+}
+
 fn main() {
-    tauri::Builder::default()
+    std::panic::set_hook(Box::new(|info| {
+        let path = std::env::temp_dir().join("openwallpaper-startup-error.log");
+        let _ = std::fs::write(&path, format!("{info}\n"));
+    }));
+    let mut builder = tauri::Builder::default();
+    #[cfg(windows)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
-            let state = AppState::load(app_data.clone())?;
+            let builtin_wallpapers = builtin::install(&app_data)?;
+            let mut state = AppState::load(app_data.clone())?;
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                state.mpv_runtime_dir = resource_dir.join("mpv-runtime");
+            }
             #[cfg(windows)]
             let discovered_roots = windows::steam_paths::discover_wallpaper_engine_roots();
             #[cfg(not(windows))]
             let discovered_roots: Vec<String> = Vec::new();
-            // Scan a detached snapshot: a large Steam Workshop library must not hold
-            // the shared state mutex while files and previews are being inspected.
-            let mut startup_snapshot = state.data.lock()
-                .map_err(|_| "state lock poisoned")?.clone();
-            library::add_roots(&mut startup_snapshot, &discovered_roots)?;
-            library::scan_library(&mut startup_snapshot, &app_data.join("thumbnails"))?;
-            *state.data.lock().map_err(|_| "state lock poisoned")? = startup_snapshot;
+            {
+                let mut data = state.data.lock().map_err(|_| "state lock poisoned")?;
+                library::add_roots(&mut data, &discovered_roots)?;
+                library::add_roots(&mut data, &[builtin_wallpapers.to_string_lossy().into_owned()])?;
+            }
             app.manage(state);
             {
                 let state = app.state::<AppState>();
@@ -80,13 +113,81 @@ fn main() {
             }
 
             let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let assignments = app_handle.state::<AppState>().data.lock()
-                    .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
-                for (monitor_id, wallpaper_id) in assignments {
-                    let state = app_handle.state::<AppState>();
-                    let _ = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id, monitor_id).await;
+            std::thread::spawn(move || {
+                let state = app_handle.state::<AppState>();
+                let _scan_guard = state.library_scan_lock.blocking_lock();
+                let mut snapshot = match state.data.lock() {
+                    Ok(data) => data.clone(),
+                    Err(_) => {
+                        state.library_scan_complete.store(true, Ordering::Release);
+                        report_restore_error(&app_handle, serde_json::json!({
+                            "message": "Не удалось прочитать состояние библиотеки",
+                        }));
+                        let _ = app_handle.emit("ow:library-ready", ());
+                        return;
+                    }
+                };
+                if let Err(error) = library::scan_library(&mut snapshot, &state.app_data_dir.join("thumbnails")) {
+                    state.library_scan_complete.store(true, Ordering::Release);
+                    report_restore_error(&app_handle, serde_json::json!({
+                        "message": format!("Не удалось просканировать библиотеку: {error}"),
+                    }));
+                    let _ = app_handle.emit("ow:library-ready", ());
+                    return;
                 }
+                {
+                    let Ok(mut data) = state.data.lock() else { return; };
+                    let favorites: std::collections::HashMap<String, bool> = data.wallpapers.iter()
+                        .map(|item| (item.id.clone(), item.favorite)).collect();
+                    for item in &mut snapshot.wallpapers {
+                        if let Some(favorite) = favorites.get(&item.id) { item.favorite = *favorite; }
+                    }
+                    data.wallpapers = snapshot.wallpapers;
+                }
+                for root in snapshot.library_roots {
+                    let _ = app_handle.asset_protocol_scope().allow_directory(std::path::PathBuf::from(root), true);
+                }
+                let _ = app_handle.asset_protocol_scope().allow_directory(state.app_data_dir.join("thumbnails"), true);
+                if let Err(error) = state.save() {
+                    report_restore_error(&app_handle, serde_json::json!({
+                        "message": format!("Не удалось сохранить индекс библиотеки: {error}"),
+                    }));
+                }
+                state.library_scan_complete.store(true, Ordering::Release);
+                let _ = app_handle.emit("ow:library-ready", ());
+                drop(_scan_guard);
+
+                let mut assignments = state.data.lock()
+                    .map(|data| data.settings.monitor_wallpapers.clone()).unwrap_or_default();
+                if assignments.is_empty() {
+                    let default_id = state.data.lock().ok()
+                        .and_then(|data| builtin::default_wallpaper_id(&data.wallpapers));
+                    let primary = commands::get_monitors(app_handle.clone()).ok()
+                        .and_then(|monitors| monitors.into_iter().find(|monitor| monitor.primary));
+                    if let (Some(wallpaper_id), Some(monitor)) = (default_id, primary) {
+                        if let Ok(mut data) = state.data.lock() {
+                            data.settings.monitor_wallpapers.insert(monitor.id, wallpaper_id);
+                            assignments = data.settings.monitor_wallpapers.clone();
+                        }
+                        if let Err(error) = state.save() {
+                            report_restore_error(&app_handle, serde_json::json!({
+                                "message": format!("Не удалось сохранить стартовые обои: {error}"),
+                            }));
+                        }
+                    }
+                }
+                tauri::async_runtime::spawn(async move {
+                    for (monitor_id, wallpaper_id) in assignments {
+                        let state = app_handle.state::<AppState>();
+                        if let Err(error) = commands::apply_wallpaper(app_handle.clone(), state, wallpaper_id.clone(), monitor_id.clone()).await {
+                            report_restore_error(&app_handle, serde_json::json!({
+                                "wallpaperId": wallpaper_id,
+                                "monitorId": monitor_id,
+                                "message": error,
+                            }));
+                        }
+                    }
+                });
             });
             Ok(())
         })
@@ -100,6 +201,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_library,
+            commands::is_library_scan_complete,
+            commands::get_pause_state,
+            commands::take_startup_errors,
             commands::get_settings,
             commands::get_collections,
             commands::get_monitors,
@@ -118,5 +222,10 @@ fn main() {
             commands::open_external_url
         ])
         .run(tauri::generate_context!())
-        .expect("OpenWallpaper failed to start");
+        .unwrap_or_else(|error| {
+            let path = std::env::temp_dir().join("openwallpaper-startup-error.log");
+            let _ = std::fs::write(&path, format!("OpenWallpaper failed to start: {error:#}\n"));
+            panic!("OpenWallpaper failed to start: {error:#}");
+        });
 }
+

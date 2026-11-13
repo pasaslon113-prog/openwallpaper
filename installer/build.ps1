@@ -14,6 +14,9 @@ Require-Command 'npm' 'Install Node.js LTS from https://nodejs.org/.'
 $target = 'x86_64-pc-windows-msvc'
 rustup target add $target
 
+Write-Host 'Preparing bundled libmpv runtime...' -ForegroundColor Cyan
+& (Join-Path $PSScriptRoot 'prepare-mpv.ps1')
+
 Write-Host 'Installing npm dependencies...' -ForegroundColor Cyan
 npm install
 if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' }
@@ -39,4 +42,5 @@ if (-not $installers) { throw "No installers were produced under $bundleRoot" }
 
 Write-Host "`nInstallers created:" -ForegroundColor Green
 $installers | Select-Object -ExpandProperty FullName
-Write-Host "`nNote: media playback requires the separately obtained libmpv runtime (mpv-2.dll). HTML wallpapers do not require it." -ForegroundColor Yellow
+Write-Host "`nThe installer includes libmpv for video, GIF, image and slideshow playback." -ForegroundColor Green
+
