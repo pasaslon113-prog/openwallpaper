@@ -1,6 +1,11 @@
 use crate::{model::AppSettings, state::AppState};
-use std::{thread, time::{Duration, Instant}};
+use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
+
+fn monitor_topology_changed(previous: Option<&[crate::model::MonitorInfo]>, current: &[crate::model::MonitorInfo]) -> bool {
+    previous.is_some_and(|previous| previous != current)
+}
 
 pub fn spawn(app: AppHandle) {
     let initial_paused = if let Some(state) = app.try_state::<AppState>() {
@@ -12,29 +17,24 @@ pub fn spawn(app: AppHandle) {
     } else { false };
     thread::spawn(move || {
         let mut last_pause = Some(initial_paused);
-        let mut last_monitors: Option<Vec<crate::model::MonitorInfo>> = None;
-        let mut last_recovery: Option<Instant> = None;
+        // Seed the baseline before polling. A surface can have a different HWND
+        // parent while WebView2 is initializing; that is not an Explorer restart
+        // and must never trigger a destructive wallpaper replacement.
+        let mut last_monitors = crate::commands::monitors_for_app(&app).ok();
         loop {
             thread::sleep(Duration::from_secs(4));
             let Some(state) = app.try_state::<AppState>() else { continue; };
             if let Ok(current_monitors) = crate::commands::monitors_for_app(&app) {
-                let monitors_changed = last_monitors.as_ref().is_some_and(|previous| previous != &current_monitors);
-                let active_surface_labels: Vec<String> = state.active_surfaces.lock()
-                    .map(|surfaces| surfaces.values().cloned().collect())
-                    .unwrap_or_default();
-                let explorer_restarted = active_surface_labels.iter().any(|label| {
-                    let Some(window) = app.get_webview_window(label) else { return true; };
-                    #[cfg(windows)]
-                    { window.hwnd().map(|hwnd| !crate::windows::desktop::has_live_workerw_parent(hwnd.0)).unwrap_or(true) }
-                    #[cfg(not(windows))]
-                    { let _ = window; false }
-                });
-                let recovery_ready = last_recovery.map(|instant| instant.elapsed() >= Duration::from_secs(12)).unwrap_or(true);
-                if (monitors_changed || explorer_restarted) && recovery_ready {
+                let monitors_changed = monitor_topology_changed(last_monitors.as_deref(), &current_monitors);
+                if monitors_changed {
                     let previous = last_monitors.clone().unwrap_or_default();
-                    let app_for_reconcile = app.clone();
                     let next = current_monitors.clone();
-                    last_recovery = Some(Instant::now());
+                    let _ = app.emit("ow:desktop-recovery", serde_json::json!({
+                        "reason": "monitor-topology-changed",
+                        "previous": previous.len(),
+                        "current": next.len(),
+                    }));
+                    let app_for_reconcile = app.clone();
                     tauri::async_runtime::spawn(async move {
                         crate::commands::reconcile_monitor_wallpapers(app_for_reconcile, previous, next).await;
                     });
@@ -129,3 +129,34 @@ fn running_on_battery() -> bool {
     }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::monitor_topology_changed;
+    use crate::model::MonitorInfo;
+
+    fn monitor(id: &str) -> MonitorInfo {
+        MonitorInfo { id: id.into(), name: id.into(), x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: true }
+    }
+
+    #[test]
+    fn baseline_does_not_trigger_recovery() {
+        let current = vec![monitor("a")];
+        assert!(!monitor_topology_changed(None, &current));
+    }
+
+    #[test]
+    fn unchanged_topology_does_not_trigger_recovery() {
+        let previous = vec![monitor("a")];
+        let current = vec![monitor("a")];
+        assert!(!monitor_topology_changed(Some(&previous), &current));
+    }
+
+    #[test]
+    fn changed_topology_triggers_recovery() {
+        let previous = vec![monitor("a")];
+        let current = vec![monitor("b")];
+        assert!(monitor_topology_changed(Some(&previous), &current));
+    }
+}
