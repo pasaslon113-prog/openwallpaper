@@ -34,6 +34,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Bundle pinned libmpv runtime
+        shell: pwsh
+        run: .\\installer\\prepare-mpv.ps1
+
       - name: Check frontend
         run: npm run build
 
@@ -65,7 +69,7 @@ jobs:
             OpenWallpaper Windows release.
 
             Install the NSIS `.exe` installer or the `.msi` package.
-            Video/GIF/image/slideshow playback requires the separately installed libmpv runtime (`mpv-2.dll`).
+            Video/GIF/image/slideshow playback uses the bundled libmpv runtime.
             Read the README and SECURITY.md before use.
           releaseDraft: true
           prerelease: true
