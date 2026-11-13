@@ -301,7 +301,7 @@ pub async fn apply_wallpaper(app: AppHandle, state: tauri::State<'_, AppState>, 
                 desktop::attach_to_desktop(hwnd.0, monitor.x, monitor.y, monitor.width, monitor.height)
                     .map_err(|e| e.to_string())?;
                 if runtime.kind != WallpaperKind::Web && runtime.kind != WallpaperKind::Scene {
-                    let mut player = MpvPlayer::start(hwnd.0 as isize, &runtime, &state.app_data_dir)
+                    let mut player = MpvPlayer::start(hwnd.0 as isize, &runtime, &state.mpv_runtime_dir)
                         .map_err(|e| e.to_string())?;
                     if paused {
                         player.set_paused(true).map_err(|e| e.to_string())?;
