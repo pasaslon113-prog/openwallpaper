@@ -52,6 +52,12 @@
     ],
     "resources": {
       "resources/mpv-runtime/": "mpv-runtime/"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      }
     }
   }
 }

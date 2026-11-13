@@ -3,7 +3,14 @@ use image::{ImageFormat, ImageReader};
 use std::{collections::{HashMap, HashSet}, fs, io::BufWriter, path::{Path, PathBuf}, time::UNIX_EPOCH};
 use walkdir::WalkDir;
 
-const VIDEO_EXT: &[&str] = &["mp4", "webm", "mkv", "mov", "avi"];
+const VIDEO_EXT: &[&str] = &[
+    "mp4", "m4v", "mkv", "webm", "mov", "avi", "divx",
+    "mpg", "mpeg", "mpe", "m1v", "m2v", "mpv",
+    "ts", "m2t", "m2ts", "mts", "m2p", "vob",
+    "wmv", "asf", "flv", "f4v", "ogv", "ogg",
+    "3gp", "3g2", "mxf", "dv", "rm", "rmvb",
+    "nut", "y4m", "wtv", "dvr-ms", "nsv", "amv",
+];
 const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp"];
 
 pub fn stable_id(path: &Path) -> String {
@@ -237,6 +244,11 @@ mod tests {
     fn recognizes_supported_formats() {
         assert_eq!(classify_path(Path::new("clip.mp4")), Some(WallpaperKind::Video));
         assert_eq!(classify_path(Path::new("clip.webm")), Some(WallpaperKind::Video));
+        assert_eq!(classify_path(Path::new("concert.m2ts")), Some(WallpaperKind::Video));
+        assert_eq!(classify_path(Path::new("old-movie.wmv")), Some(WallpaperKind::Video));
+        assert_eq!(classify_path(Path::new("camera.3gp")), Some(WallpaperKind::Video));
+        assert_eq!(classify_path(Path::new("archive.rmvb")), Some(WallpaperKind::Video));
+        assert_eq!(classify_path(Path::new("broadcast.mxf")), Some(WallpaperKind::Video));
         assert_eq!(classify_path(Path::new("anim.gif")), Some(WallpaperKind::Gif));
         assert_eq!(classify_path(Path::new("still.webp")), Some(WallpaperKind::Image));
         assert_eq!(classify_path(Path::new("text.txt")), None);

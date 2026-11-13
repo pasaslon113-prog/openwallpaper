@@ -6,7 +6,7 @@ This repository does not contain Wallpaper Engine source code, proprietary asset
 
 ## Current MVP
 
-- Local library scanner for MP4, WebM, MKV, MOV, AVI, GIF, PNG, JPEG, WebP and BMP.
+- Local library scanner for common FFmpeg/libmpv video containers (MP4/M4V, WebM, MKV, MOV, AVI, MPEG, TS/M2TS/MTS, VOB, WMV/ASF, FLV, OGV, 3GP, MXF, RMVB and others), plus GIF, PNG, JPEG, WebP and BMP. Actual codec support depends on the media encoding and hardware.
 - HTML wallpaper folders (`index.html`) and user-supplied HTTP(S) web wallpapers.
 - Three original, animated HTML wallpapers are installed into the local library on first launch. They work without Steam, Wallpaper Engine, libmpv or an internet connection.
 - Pause/resume controls both native media playback and CSS animation in the bundled wallpapers.
@@ -48,10 +48,10 @@ The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper r
 - Rust stable with the MSVC target (`x86_64-pc-windows-msvc`).
 - Node.js 20+ and npm.
 - Visual Studio Build Tools with the **Desktop development with C++** workload and Windows 10/11 SDK.
-- Microsoft Edge WebView2 Runtime.
+- Microsoft Edge WebView2 Runtime (embedded as an offline installer in Windows packages, so no separate download or setup is needed).
 - The Windows installer bundles the pinned x64 libmpv runtime and its dependent DLLs. No separate mpv installation or manual DLL copying is required.
 
-The Windows build downloads a pinned x64 runtime archive from the mpv Windows build project during packaging and includes the required runtime DLLs and accompanying license/readme files under the application resources. OpenWallpaper loads this bundled runtime automatically. Users do not need to install mpv, set environment variables, or copy DLLs beside the executable.
+The Windows build downloads the pinned official mpv v0.42.0 x64 LGPL libmpv archive during packaging and includes its runtime DLLs and licence notices under application resources. The Windows installer also embeds Microsoft's WebView2 offline installer. OpenWallpaper loads libmpv automatically and installs WebView2 if it is missing. Users do not need to install mpv or WebView2 manually, set environment variables, or copy DLLs beside the executable.
 
 HTML wallpapers use WebView2. Video, GIF, still-image and slideshow playback use the bundled libmpv runtime.
 
@@ -181,7 +181,7 @@ The Rust suite currently contains 24 unit tests covering media-format classifica
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE). Third-party runtime components, including libmpv and WebView2, retain their own licences and terms.
+MIT. See [`LICENSE`](LICENSE). The bundled libmpv is the upstream Windows x64 LGPL build from mpv v0.42.0 (the upstream release identifies it as built without GPL-only mpv/FFmpeg components); its notices ship with the runtime. The DLL is dynamically loaded and can be replaced by a compatible build. WebView2 is Microsoft's separately licensed runtime. See the upstream [mpv v0.42.0 release](https://github.com/mpv-player/mpv/releases/tag/v0.42.0) and [mpv licensing](https://github.com/mpv-player/mpv/blob/master/Copyright).
 
 ## Getting a ready Windows installer
 

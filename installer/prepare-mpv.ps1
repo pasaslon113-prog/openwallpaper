@@ -1,31 +1,21 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$tag = '20261111'
-$asset = "mpv-dev-x86_64-$tag-git-bcde6b93cc.7z"
-$expectedSha256 = '273c079b11ea5575822f972756f4c9a71149a5c10130353abeb8586738938452'
-$url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/$tag/$asset"
+$tag = 'v0.42.0'
+$asset = "libmpv-$tag-x86_64-w64-mingw32-lgpl.zip"
+$expectedSha256 = '8e5f77430efc53ef175804ba6618527e3af0448a0dcabf04d3cc72659d1a6fce'
+$url = "https://github.com/mpv-player/mpv/releases/download/$tag/$asset"
 $downloadDir = Join-Path $env:TEMP 'openwallpaper-mpv'
 $archive = Join-Path $downloadDir $asset
 $extractDir = Join-Path $downloadDir 'extract'
 $target = Join-Path $repoRoot 'src-tauri/resources/mpv-runtime'
 
 New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
-$sevenZip = Get-Command '7z.exe' -ErrorAction SilentlyContinue
-if ($sevenZip) {
-    $sevenZipPath = $sevenZip.Source
-} else {
-    $sevenZipPath = Join-Path $downloadDir '7zr.exe'
-    if (-not (Test-Path $sevenZipPath)) {
-        Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7zr.exe' -OutFile $sevenZipPath
-    }
-}
-
-if (Test-Path $archive) {
+if (Test-Path -LiteralPath $archive) {
     $cachedHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($cachedHash -ne $expectedSha256) { Remove-Item -LiteralPath $archive -Force }
 }
-if (-not (Test-Path $archive)) {
-    Write-Host "Downloading pinned libmpv runtime: $tag" -ForegroundColor Cyan
+if (-not (Test-Path -LiteralPath $archive)) {
+    Write-Host "Downloading official mpv $tag LGPL libmpv runtime..." -ForegroundColor Cyan
     Invoke-WebRequest -Uri $url -OutFile $archive
 }
 $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -35,45 +25,61 @@ if ($actualHash -ne $expectedSha256) {
 
 if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-& $sevenZipPath x $archive "-o$extractDir" -y | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Could not extract the libmpv runtime archive.' }
+Expand-Archive -LiteralPath $archive -DestinationPath $extractDir -Force
 
-$mpvDll = Get-ChildItem $extractDir -Recurse -File |
-    Where-Object { $_.Name -in @('libmpv-2.dll', 'mpv-2.dll') } |
+$mpvDll = Get-ChildItem -Path $extractDir -Recurse -File -Filter 'libmpv-2.dll' |
     Select-Object -First 1
-if (-not $mpvDll) { throw 'The mpv-dev archive does not contain libmpv-2.dll or mpv-2.dll.' }
+if (-not $mpvDll) { throw 'The official LGPL archive does not contain libmpv-2.dll.' }
 
-$runtimeDlls = @(Get-ChildItem $extractDir -Recurse -File -Filter '*.dll')
-if ($runtimeDlls.Count -eq 0) { throw 'The mpv-dev archive contains no runtime DLL dependencies.' }
-$duplicateDlls = @($runtimeDlls | Group-Object Name | Where-Object Count -gt 1)
-if ($duplicateDlls.Count -gt 0) {
-    throw "The mpv-dev archive contains duplicate DLL names: $($duplicateDlls.Name -join ', ')"
-}
+$runtimeDlls = @(Get-ChildItem -Path $extractDir -Recurse -File -Filter '*.dll')
+if ($runtimeDlls.Count -eq 0) { throw 'The libmpv archive contains no runtime DLL dependencies.' }
 
 if (Test-Path $target) { Remove-Item $target -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 
-# The DLL and its dependencies live together in the bundled resource directory.
+# Windows dependency DLL lookup is restricted to this directory at runtime.
+# Flatten DLLs into one directory and reject conflicting duplicate basenames.
 foreach ($dll in $runtimeDlls) {
-    Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $target $dll.Name) -Force
+    $destination = Join-Path $target $dll.Name
+    if (Test-Path -LiteralPath $destination) {
+        $existingHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+        $incomingHash = (Get-FileHash -LiteralPath $dll.FullName -Algorithm SHA256).Hash
+        if ($existingHash -ne $incomingHash) {
+            throw "Conflicting runtime DLL name '$($dll.Name)' in upstream archive."
+        }
+        continue
+    }
+    Copy-Item -LiteralPath $dll.FullName -Destination $destination -Force
 }
-Get-ChildItem $extractDir -Recurse -File | Where-Object {
-    $_.Name -match '^(LICENSE|COPYING|README|AUTHORS)(\..*)?$' -or $_.Extension -eq '.txt'
-} | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $target $_.Name) -Force
+if (-not (Test-Path -LiteralPath (Join-Path $target 'libmpv-2.dll'))) {
+    throw 'libmpv-2.dll was not staged.'
 }
 
-$stagedLibrary = Join-Path $target $mpvDll.Name
-if (-not (Test-Path $stagedLibrary)) { throw 'The libmpv library was not staged.' }
+# Keep upstream licence/readme material and its directory structure.
+$licenseRoot = Join-Path $target 'licenses'
+$noticeFiles = Get-ChildItem -Path $extractDir -Recurse -File | Where-Object {
+    $_.Name -match '^(LICENSE|COPYING|COPYRIGHT|NOTICE|AUTHORS|README)([._-].*)?$' -or
+    $_.Extension -eq '.txt'
+}
+foreach ($file in $noticeFiles) {
+    $relative = $file.FullName.Substring($extractDir.Length).TrimStart('\', '/')
+    $destination = Join-Path $licenseRoot $relative
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+}
+
 @"
-OpenWallpaper bundled libmpv runtime
-Source: https://github.com/shinchiro/mpv-winbuild-cmake
+OpenWallpaper bundled media runtime
+Project: mpv
 Release: $tag
-Archive: $asset
+Official upstream release: https://github.com/mpv-player/mpv/releases/tag/$tag
+Asset: $asset
 SHA-256: $expectedSha256
-Library: $($mpvDll.Name)
-Architecture: Windows x64 baseline (not x86_64-v3)
+Architecture: x86_64 Windows / MinGW
+Licence mode: LGPL build, as identified by the upstream release
+The upstream release notes state that the LGPL build excludes GPL-only mpv and FFmpeg components.
+See licenses/ and the upstream Copyright file for notices.
 "@ | Set-Content -LiteralPath (Join-Path $target 'RUNTIME-SOURCE.txt') -Encoding UTF8
 
-$size = (Get-ChildItem $target -Recurse -File | Measure-Object -Property Length -Sum).Sum
-Write-Host ("Bundled {0} DLL files ({1:N1} MB) into {2}" -f $runtimeDlls.Count, ($size / 1MB), $target) -ForegroundColor Green
+$totalBytes = (Get-ChildItem $target -Recurse -File | Measure-Object -Property Length -Sum).Sum
+Write-Host ("Bundled {0} DLL files ({1:N1} MB) into {2}" -f $runtimeDlls.Count, ($totalBytes / 1MB), $target) -ForegroundColor Green
