@@ -140,7 +140,7 @@ fn load_mpv_library(app_data: &Path) -> anyhow::Result<Library> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() { candidates.push(parent.join("mpv-2.dll")); }
     }
-    candidates.push(app_data.join("mpv-runtime").join("mpv-2.dll"));
+    candidates.push(app_data.join("mpv-2.dll"));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             candidates.push(parent.join("resources").join("mpv-runtime").join("mpv-2.dll"));
