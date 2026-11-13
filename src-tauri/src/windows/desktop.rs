@@ -75,7 +75,24 @@ pub fn attach_to_desktop(hwnd: *mut c_void, x: i32, y: i32, width: u32, height: 
         // Explorer's undocumented message asks the shell to create the desktop WorkerW layer.
         let _ = SendMessageW(progman, 0x052C, 0xD, 1);
         let mut worker: Hwnd = std::ptr::null_mut();
-        let _ = EnumWindows(Some(find_worker_window), &mut worker as *mut Hwnd as isize);
+
+        // Windows 11 24H2+ uses the "raised desktop" hierarchy: both
+        // SHELLDLL_DefView and the wallpaper WorkerW are children of Progman.
+        // The classic top-level sibling lookup below does not see that WorkerW.
+        let shell_view = FindWindowExW(progman, std::ptr::null_mut(),
+            [83u16, 72, 69, 76, 76, 68, 76, 76, 95, 68, 101, 102, 86, 105, 101, 119, 0].as_ptr(),
+            std::ptr::null());
+        if !shell_view.is_null() {
+            worker = FindWindowExW(progman, shell_view,
+                [87u16, 111, 114, 107, 101, 114, 87, 0].as_ptr(),
+                std::ptr::null());
+        }
+
+        // Windows 10 and earlier Windows 11 builds expose the wallpaper host
+        // as a top-level WorkerW following the window that owns SHELLDLL_DefView.
+        if worker.is_null() {
+            let _ = EnumWindows(Some(find_worker_window), &mut worker as *mut Hwnd as isize);
+        }
         // Progman is not a safe substitute: parenting to it may put the surface
         // above desktop icons while appearing to succeed. Report failure so the
         // caller can leave the wallpaper unapplied and explain the problem.
