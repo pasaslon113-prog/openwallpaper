@@ -231,3 +231,7 @@ npm run build
 
 Windows CI runs `cargo fmt --check`, `cargo check`, `cargo test`, the TypeScript/Vite production build, Tauri NSIS/MSI packaging, and a 10-second process-startup smoke test. The run for commit `68132a67bb9c4d4ed8e2087c35298c40f6c47e16` passed all 24 Rust tests and produced workflow artifacts. The newer changes in the current pull request must also pass CI before they are merged.
 
+
+## Startup diagnostics
+
+If the manager window does not appear, check the tray area first: closing the main window hides OpenWallpaper instead of exiting. On startup panic or Tauri runtime failure, the app writes details to `%TEMP%\openwallpaper-startup-error.log` (usually under your Windows user Temp folder). Library indexing runs after the manager window is shown, so a large Steam Workshop folder should not block initial window creation. Restore or indexing errors are retained until the UI reads them and are displayed as notifications.
