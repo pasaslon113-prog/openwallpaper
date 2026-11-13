@@ -558,7 +558,7 @@ pub(crate) async fn reconcile_monitor_wallpapers(app: AppHandle, previous: Vec<M
 
     if let Ok(mut surfaces) = state.active_surfaces.lock() {
         surfaces.retain(|monitor_id, _| active_monitor_ids.contains(monitor_id));
-    }
+    };
 }
 
 fn monitor_distance_squared(a: &MonitorInfo, b: &MonitorInfo) -> i64 {
