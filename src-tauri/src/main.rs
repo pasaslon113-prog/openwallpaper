@@ -52,7 +52,10 @@ fn main() {
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
             let builtin_wallpapers = builtin::install(&app_data)?;
-            let state = AppState::load(app_data.clone())?;
+            let mut state = AppState::load(app_data.clone())?;
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                state.mpv_runtime_dir = resource_dir.join("mpv-runtime");
+            }
             #[cfg(windows)]
             let discovered_roots = windows::steam_paths::discover_wallpaper_engine_roots();
             #[cfg(not(windows))]

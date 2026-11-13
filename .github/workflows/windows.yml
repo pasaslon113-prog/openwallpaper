@@ -79,6 +79,49 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm run tauri build -- --bundles nsis,msi
 
+      - name: Validate bundled libmpv runtime
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        run: |
+          $runtimeDir = Join-Path $PWD 'src-tauri/target/release/resources/mpv-runtime'
+          $dllPath = Join-Path $runtimeDir 'libmpv-2.dll'
+          if (-not (Test-Path -LiteralPath $dllPath)) {
+            throw "Bundled libmpv DLL is missing: $dllPath"
+          }
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class OpenWallpaperDllProbe {
+              [DllImport("kernel32", SetLastError = true)]
+              public static extern bool SetDefaultDllDirectories(uint flags);
+              [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+              public static extern IntPtr AddDllDirectory(string path);
+              [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+              public static extern IntPtr LoadLibrary(string path);
+              [DllImport("kernel32", SetLastError = true)]
+              public static extern bool FreeLibrary(IntPtr module);
+              [DllImport("kernel32", SetLastError = true)]
+              public static extern bool RemoveDllDirectory(IntPtr cookie);
+          }
+          '@
+          if (-not [OpenWallpaperDllProbe]::SetDefaultDllDirectories(0x1000)) {
+            throw "SetDefaultDllDirectories failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+          }
+          $cookie = [OpenWallpaperDllProbe]::AddDllDirectory($runtimeDir)
+          if ($cookie -eq [IntPtr]::Zero) {
+            throw "AddDllDirectory failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+          }
+          try {
+            $module = [OpenWallpaperDllProbe]::LoadLibrary($dllPath)
+            if ($module -eq [IntPtr]::Zero) {
+              throw "libmpv or one of its dependencies failed to load: Win32 $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+            }
+            [void][OpenWallpaperDllProbe]::FreeLibrary($module)
+          }
+          finally {
+            [void][OpenWallpaperDllProbe]::RemoveDllDirectory($cookie)
+          }
+
       - name: Smoke test Windows application startup
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         shell: pwsh

@@ -134,11 +134,11 @@ All layer paths are resolved relative to the scene directory. The backend canoni
 
 ## Steam Workshop and Wallpaper Engine content
 
-The Workshop page is an optional catalogue for the Steam edition of Wallpaper Engine. It is not required to use OpenWallpaper. Workshop subscription and downloads require Wallpaper Engine's Steam app (ID `431960`) and are handled by Steam; OpenWallpaper does not download those files. For a standalone setup, use the bundled OpenWallpaper originals, import your own folders, or add a compatible HTTP(S) web wallpaper.
+The Workshop page is an optional public catalogue for Wallpaper Engine (Steam App ID `431960`). It is not required to use OpenWallpaper. Public item cards and previews can be browsed without owning Wallpaper Engine, but subscription and downloads are controlled by Steam and depend on the Steam account's entitlement to the paid app. OpenWallpaper does not bypass that check or download Workshop binaries itself. For a standalone setup (including users without a Wallpaper Engine licence), the three bundled OpenWallpaper originals work immediately; you can also import your own folders or add a compatible HTTP(S) web wallpaper.
 
 - Workshop search uses the public Steam Community browse page for App ID `431960`.
 - Item details can be requested from the official Steam Web API.
-- The **Subscribe in Steam** action opens the corresponding Workshop item in the installed Steam client. Steam performs subscription, account checks and content download.
+- The **Open Steam page** action opens the corresponding Workshop item. Steam performs any subscription, entitlement checks and content download.
 - After Steam finishes downloading, use **Refresh library**. OpenWallpaper scans the local `steamapps/workshop/content/431960` directory and the installed `Wallpaper Engine/projects` directory where discovered.
 - Only files already present on the local machine are indexed. OpenWallpaper does not call private download endpoints, scrape authentication cookies, bypass DRM, or redistribute Workshop files.
 

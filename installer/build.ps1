@@ -16,7 +16,6 @@ rustup target add $target
 
 Write-Host 'Preparing bundled libmpv runtime...' -ForegroundColor Cyan
 & (Join-Path $PSScriptRoot 'prepare-mpv.ps1')
-if ($LASTEXITCODE -ne 0) { throw 'Preparing bundled libmpv runtime failed.' }
 
 Write-Host 'Installing npm dependencies...' -ForegroundColor Cyan
 npm install
