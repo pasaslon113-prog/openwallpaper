@@ -79,15 +79,16 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm run tauri build -- --bundles nsis,msi
 
-      - name: Validate bundled libmpv runtime
+      - name: Validate bundled runtime and installed app
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         shell: pwsh
         run: |
-          $runtimeDir = Join-Path $PWD 'src-tauri/target/release/resources/mpv-runtime'
-          $dllPath = Join-Path $runtimeDir 'libmpv-2.dll'
-          if (-not (Test-Path -LiteralPath $dllPath)) {
-            throw "Bundled libmpv DLL is missing: $dllPath"
+          $sourceRuntime = Join-Path $PWD 'src-tauri/resources/mpv-runtime'
+          $sourceDll = Join-Path $sourceRuntime 'libmpv-2.dll'
+          if (-not (Test-Path -LiteralPath $sourceDll)) {
+            throw "Staged libmpv DLL is missing: $sourceDll"
           }
+
           Add-Type -TypeDefinition @'
           using System;
           using System.Runtime.InteropServices;
@@ -104,42 +105,63 @@ jobs:
               public static extern bool RemoveDllDirectory(IntPtr cookie);
           }
           '@
-          if (-not [OpenWallpaperDllProbe]::SetDefaultDllDirectories(0x1000)) {
-            throw "SetDefaultDllDirectories failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
-          }
-          $cookie = [OpenWallpaperDllProbe]::AddDllDirectory($runtimeDir)
-          if ($cookie -eq [IntPtr]::Zero) {
-            throw "AddDllDirectory failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
-          }
-          try {
-            $module = [OpenWallpaperDllProbe]::LoadLibrary($dllPath)
-            if ($module -eq [IntPtr]::Zero) {
-              throw "libmpv or one of its dependencies failed to load: Win32 $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+
+          function Test-LibMpv([string]$RuntimeDir) {
+            $dllPath = Join-Path $RuntimeDir 'libmpv-2.dll'
+            if (-not (Test-Path -LiteralPath $dllPath)) { throw "Bundled libmpv DLL is missing: $dllPath" }
+            if (-not [OpenWallpaperDllProbe]::SetDefaultDllDirectories(0x1000)) {
+              throw "SetDefaultDllDirectories failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
             }
-            [void][OpenWallpaperDllProbe]::FreeLibrary($module)
-          }
-          finally {
-            [void][OpenWallpaperDllProbe]::RemoveDllDirectory($cookie)
+            $cookie = [OpenWallpaperDllProbe]::AddDllDirectory($RuntimeDir)
+            if ($cookie -eq [IntPtr]::Zero) {
+              throw "AddDllDirectory failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+            }
+            try {
+              $module = [OpenWallpaperDllProbe]::LoadLibrary($dllPath)
+              if ($module -eq [IntPtr]::Zero) {
+                throw "libmpv or one of its dependencies failed to load from $RuntimeDir (Win32 $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"
+              }
+              [void][OpenWallpaperDllProbe]::FreeLibrary($module)
+            }
+            finally {
+              [void][OpenWallpaperDllProbe]::RemoveDllDirectory($cookie)
+            }
           }
 
-      - name: Smoke test Windows application startup
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        shell: pwsh
-        run: |
+          # First validate the staged runtime, then install the actual NSIS package.
+          Test-LibMpv $sourceRuntime
+          $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*-setup.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced.' }
+          $installDir = Join-Path $env:TEMP 'OpenWallpaper-CI-Install'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "NSIS installer failed with exit code $($install.ExitCode)" }
+
+          $installedDll = Get-ChildItem -Path $installDir -Recurse -File -Filter 'libmpv-2.dll' | Select-Object -First 1
+          if (-not $installedDll) { throw "Installed package does not contain libmpv-2.dll under $installDir" }
+          Test-LibMpv $installedDll.DirectoryName
+
+          $appPath = Join-Path $installDir 'openwallpaper.exe'
+          if (-not (Test-Path -LiteralPath $appPath)) {
+            $appPath = (Get-ChildItem -Path $installDir -Recurse -File -Filter 'openwallpaper.exe' | Select-Object -First 1).FullName
+          }
+          if (-not $appPath -or -not (Test-Path -LiteralPath $appPath)) { throw "Installed OpenWallpaper executable not found under $installDir" }
+
           $log = Join-Path $env:TEMP 'openwallpaper-startup-error.log'
           Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
-          $app = Start-Process -FilePath 'src-tauri/target/release/openwallpaper.exe' -PassThru
+          $app = Start-Process -FilePath $appPath -ArgumentList '--background' -PassThru
           try {
             Start-Sleep -Seconds 10
             $app.Refresh()
             if ($app.HasExited) {
               $details = if (Test-Path -LiteralPath $log) { Get-Content -Raw -LiteralPath $log } else { 'No startup log was produced.' }
-              throw "OpenWallpaper exited during startup smoke test (code $($app.ExitCode)): $details"
+              throw "Installed OpenWallpaper exited during startup smoke test (code $($app.ExitCode)): $details"
             }
           }
           finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
           }
+
 
       - name: Upload Windows installers as workflow artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
