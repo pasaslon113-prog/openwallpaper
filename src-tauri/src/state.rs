@@ -15,6 +15,8 @@ pub struct AppState {
     pub active_surfaces: Mutex<HashMap<String, String>>,
     pub data_file: PathBuf,
     pub app_data_dir: PathBuf,
+    /// Bundled libmpv runtime directory installed with the application.
+    pub mpv_runtime_dir: PathBuf,
     pub paused: Mutex<bool>,
     pub manual_paused: Mutex<bool>,
     pub library_scan_lock: tokio::sync::Mutex<()>,
@@ -55,6 +57,7 @@ impl AppState {
             active_surfaces: Mutex::new(HashMap::new()),
             data_file,
             app_data_dir,
+            mpv_runtime_dir: std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("resources").join("mpv-runtime"))).unwrap_or_default(),
             paused: Mutex::new(false),
             manual_paused: Mutex::new(false),
             library_scan_lock: tokio::sync::Mutex::new(()),
