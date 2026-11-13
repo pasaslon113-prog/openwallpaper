@@ -26,7 +26,7 @@ unsafe impl Send for MpvPlayer {}
 
 #[cfg(windows)]
 impl MpvPlayer {
-    pub fn start(hwnd: isize, wallpaper: &RuntimeWallpaper, app_data: &Path) -> anyhow::Result<Self> {
+    pub fn start(hwnd: isize, wallpaper: &RuntimeWallpaper, app_data: &Path, mpv_runtime_dir: &Path) -> anyhow::Result<Self> {
         // Prepare fallible filesystem/string work before allocating the native mpv handle.
         let source = if wallpaper.kind == crate::model::WallpaperKind::Slideshow {
             create_slideshow_playlist(&wallpaper.path, app_data, wallpaper.slideshow_seconds)?
@@ -38,7 +38,7 @@ impl MpvPlayer {
         let pointers: Vec<*const c_char> = args.iter().map(|value| value.as_ptr())
             .chain(std::iter::once(std::ptr::null())).collect();
 
-        let library = load_mpv_library(app_data)?;
+        let library = load_mpv_library(mpv_runtime_dir)?;
         unsafe {
             let create: MpvCreate = *library.get(b"mpv_create\0")?;
             let set_option: MpvSetOptionString = *library.get(b"mpv_set_option_string\0")?;
@@ -126,7 +126,7 @@ pub struct MpvPlayer;
 
 #[cfg(not(windows))]
 impl MpvPlayer {
-    pub fn start(_hwnd: isize, _wallpaper: &RuntimeWallpaper, _app_data: &Path) -> anyhow::Result<Self> {
+    pub fn start(_hwnd: isize, _wallpaper: &RuntimeWallpaper, _app_data: &Path, _mpv_runtime_dir: &Path) -> anyhow::Result<Self> {
         anyhow::bail!("Воспроизведение libmpv реализовано для Windows 10/11");
     }
     pub fn set_paused(&mut self, _paused: bool) -> anyhow::Result<()> { Ok(()) }
@@ -134,13 +134,13 @@ impl MpvPlayer {
 }
 
 #[cfg(windows)]
-fn load_mpv_library(app_data: &Path) -> anyhow::Result<Library> {
+fn load_mpv_library(mpv_runtime_dir: &Path) -> anyhow::Result<Library> {
     let mut candidates = Vec::new();
     if let Ok(path) = std::env::var("OPENWALLPAPER_MPV") { candidates.push(PathBuf::from(path)); }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() { candidates.push(parent.join("mpv-2.dll")); }
     }
-    candidates.push(app_data.join("mpv-2.dll"));
+    candidates.push(mpv_runtime_dir.join("mpv-2.dll"));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             candidates.push(parent.join("resources").join("mpv-runtime").join("mpv-2.dll"));
