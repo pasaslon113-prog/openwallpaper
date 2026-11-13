@@ -49,11 +49,11 @@ The WorkerW method uses undocumented Windows Explorer behaviour. OpenWallpaper r
 - Node.js 20+ and npm.
 - Visual Studio Build Tools with the **Desktop development with C++** workload and Windows 10/11 SDK.
 - Microsoft Edge WebView2 Runtime.
-- Optionally, a Windows build of **libmpv** providing `mpv-2.dll` and its required runtime DLLs for video, GIF, image and slideshow playback.
+- The Windows installer bundles the pinned x64 libmpv runtime and its dependent DLLs. No separate mpv installation or manual DLL copying is required.
 
-The libmpv runtime is deliberately not vendored in this repository. Obtain it from an official mpv/libmpv distribution, respecting the distribution's licence, and place `mpv-2.dll` plus its sibling runtime dependencies next to `OpenWallpaper.exe`. Alternatively set the `OPENWALLPAPER_MPV` environment variable to the full path of `mpv-2.dll`.
+The Windows build downloads a pinned x64 runtime archive from the mpv Windows build project during packaging and includes the required runtime DLLs and accompanying license/readme files under the application resources. OpenWallpaper loads this bundled runtime automatically. Users do not need to install mpv, set environment variables, or copy DLLs beside the executable.
 
-HTML wallpapers can run without libmpv. Video, GIF, still-image and slideshow playback require the libmpv runtime.
+HTML wallpapers use WebView2. Video, GIF, still-image and slideshow playback use the bundled libmpv runtime.
 
 ## Development
 
@@ -93,7 +93,7 @@ The installers are generated under `src-tauri/target/release/bundle/`.
 3. To add your own backgrounds, select **Import folder**. HTML wallpaper folders with an `index.html` entry point work without libmpv.
 4. Use the tray icon to reopen the manager, pause playback or exit.
 
-For video/GIF/image/slideshow playback, make sure `mpv-2.dll` is accessible to the application. The app reports a direct error when libmpv cannot be loaded; it does not silently substitute a different player.
+Video, GIF, image and slideshow playback are ready after installation; the libmpv runtime is included in the Windows installer.
 
 ## Supported clean-room scene format
 
@@ -198,7 +198,7 @@ The repository includes a Windows GitHub Actions workflow. After the source is p
 3. Open **GitHub → Releases**, review the draft `OpenWallpaper v0.1.0`, and publish it when ready.
 4. Download the `.exe` (NSIS) or `.msi` installer from that release.
 
-The first public build should be treated as an experimental MVP. It is not code-signed. Windows may display SmartScreen warnings for unsigned builds. The media engine dynamically loads `mpv-2.dll`; the libmpv runtime is intentionally not bundled and must be obtained from a trusted official distribution in accordance with its licence. Without it, HTML wallpapers can work, but video/GIF/image/slideshow playback will report that the runtime is unavailable.
+The first public build should be treated as an experimental MVP. It is not code-signed. Windows may display SmartScreen warnings for unsigned builds. The media engine dynamically loads the libmpv runtime bundled inside the installer, together with its dependent DLLs and accompanying licence notices. No extra runtime installation is required.
 
 ### Local Windows build
 
@@ -209,7 +209,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\installer\build.ps1
 ```
 
-Required tools: Node.js LTS, Rust stable with the MSVC target, Visual Studio Build Tools with **Desktop development with C++**, and a Windows 10/11 SDK. The Tauri Windows bundler uses WebView2; Windows 10/11 normally provides the WebView2 runtime, otherwise install Microsoft's Evergreen WebView2 Runtime.
+Required tools: Node.js LTS, Rust stable with the MSVC target, Visual Studio Build Tools with **Desktop development with C++**, a Windows 10/11 SDK, and network access to download the pinned libmpv build. The preparation script downloads a small 7-Zip command-line extractor automatically when needed. The Tauri Windows bundler uses WebView2; Windows 10/11 normally provides the WebView2 runtime, otherwise install Microsoft's Evergreen WebView2 Runtime.
 
 
 ## Performance and validation
