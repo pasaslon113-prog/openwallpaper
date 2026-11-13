@@ -17,12 +17,17 @@ function safeSource(path: string): string {
   return convertFileSrc(path);
 }
 
+function syncFramePause(frame: HTMLIFrameElement): void {
+  frame.contentWindow?.postMessage({ type: "openwallpaper:pause", paused }, "*");
+}
+
 function mountWeb(): void {
   const frame = document.createElement("iframe");
   frame.className = "web-wallpaper";
   frame.allow = "autoplay; fullscreen; picture-in-picture";
   frame.referrerPolicy = "no-referrer";
   frame.src = config!.url || safeSource(config!.path);
+  frame.addEventListener("load", () => syncFramePause(frame));
   root.append(frame);
 }
 
@@ -58,6 +63,7 @@ function mountScene(): void {
       element.src = safeSource(layer.source);
       element.setAttribute("allow", "autoplay; fullscreen");
       element.setAttribute("sandbox", "allow-scripts allow-same-origin");
+      element.addEventListener("load", () => syncFramePause(element));
     }
     root.append(element);
   }
@@ -66,6 +72,7 @@ function mountScene(): void {
 function applyPause(value: boolean): void {
   paused = value;
   document.documentElement.dataset.paused = String(value);
+  document.querySelectorAll<HTMLIFrameElement>("iframe").forEach(syncFramePause);
   document.querySelectorAll<HTMLVideoElement>("video").forEach((video) => {
     if (value) video.pause(); else void video.play().catch(() => undefined);
   });
@@ -92,3 +99,4 @@ async function start(): Promise<void> {
 }
 
 void start();
+

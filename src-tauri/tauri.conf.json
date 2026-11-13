@@ -30,10 +30,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$HOME/**",
-          "$APPDATA/**",
-          "$DOCUMENT/**",
-          "$DOWNLOAD/**"
+          "$APPDATA/org.openwallpaper.desktop/**/*"
         ]
       }
     }
@@ -52,11 +49,15 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
-    ]
-  },
-  "plugins": {
-    "dialog": {
-      "all": true
+    ],
+    "resources": {
+      "resources/mpv-runtime/": "mpv-runtime/"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      }
     }
   }
 }

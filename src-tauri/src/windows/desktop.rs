@@ -19,6 +19,27 @@ extern "system" {
     fn SetParent(child: Hwnd, parent: Hwnd) -> Hwnd;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn SetWindowPos(hwnd: Hwnd, insert_after: Hwnd, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+    fn GetParent(hwnd: Hwnd) -> Hwnd;
+    fn IsWindow(hwnd: Hwnd) -> i32;
+    fn GetClassNameW(hwnd: Hwnd, class_name: *mut u16, max_count: i32) -> i32;
+}
+
+#[cfg(windows)]
+pub fn has_live_workerw_parent(hwnd: *mut c_void) -> bool {
+    unsafe {
+        let parent = GetParent(hwnd);
+        if parent.is_null() || IsWindow(parent) == 0 { return false; }
+        let mut class_name = [0u16; 64];
+        let length = GetClassNameW(parent, class_name.as_mut_ptr(), class_name.len() as i32);
+        length > 0 && String::from_utf16_lossy(&class_name[..length as usize]) == "WorkerW"
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn SetLastError(error: u32);
+    fn GetLastError() -> u32;
 }
 
 #[cfg(windows)]
@@ -54,15 +75,41 @@ pub fn attach_to_desktop(hwnd: *mut c_void, x: i32, y: i32, width: u32, height: 
         // Explorer's undocumented message asks the shell to create the desktop WorkerW layer.
         let _ = SendMessageW(progman, 0x052C, 0xD, 1);
         let mut worker: Hwnd = std::ptr::null_mut();
-        let _ = EnumWindows(Some(find_worker_window), &mut worker as *mut Hwnd as isize);
-        // Windows 11 24H2 may expose no separate WorkerW; use Progman as a compatibility fallback.
-        let parent = if worker.is_null() { progman } else { worker };
+
+        // Windows 11 24H2+ uses the "raised desktop" hierarchy: both
+        // SHELLDLL_DefView and the wallpaper WorkerW are children of Progman.
+        // The classic top-level sibling lookup below does not see that WorkerW.
+        let shell_view = FindWindowExW(progman, std::ptr::null_mut(),
+            [83u16, 72, 69, 76, 76, 68, 76, 76, 95, 68, 101, 102, 86, 105, 101, 119, 0].as_ptr(),
+            std::ptr::null());
+        if !shell_view.is_null() {
+            worker = FindWindowExW(progman, shell_view,
+                [87u16, 111, 114, 107, 101, 114, 87, 0].as_ptr(),
+                std::ptr::null());
+        }
+
+        // Windows 10 and earlier Windows 11 builds expose the wallpaper host
+        // as a top-level WorkerW following the window that owns SHELLDLL_DefView.
+        if worker.is_null() {
+            let _ = EnumWindows(Some(find_worker_window), &mut worker as *mut Hwnd as isize);
+        }
+        // Progman is not a safe substitute: parenting to it may put the surface
+        // above desktop icons while appearing to succeed. Report failure so the
+        // caller can leave the wallpaper unapplied and explain the problem.
+        if worker.is_null() {
+            anyhow::bail!("Не найден WorkerW рабочего стола. Обои не были применены; перезапустите Проводник Windows или проверьте совместимость этой версии Windows.");
+        }
+        let parent = worker;
 
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let _ = SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !WS_POPUP) | WS_CHILD);
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (ex_style & !WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW);
-        let _previous_parent = SetParent(hwnd, parent);
+        SetLastError(0);
+        let previous_parent = SetParent(hwnd, parent);
+        if previous_parent.is_null() && GetLastError() != 0 {
+            anyhow::bail!("Не удалось встроить поверхность обоев в WorkerW рабочего стола");
+        }
 
         let mut parent_rect = Rect { left: 0, top: 0, right: 0, bottom: 0 };
         if GetWindowRect(parent, &mut parent_rect) == 0 { anyhow::bail!("Не удалось получить геометрию рабочего стола"); }
@@ -79,3 +126,4 @@ pub fn attach_to_desktop(hwnd: *mut c_void, x: i32, y: i32, width: u32, height: 
 pub fn attach_to_desktop(_hwnd: (), _x: i32, _y: i32, _width: u32, _height: u32) -> anyhow::Result<()> {
     anyhow::bail!("Размещение обоев за значками поддерживается только в Windows 10/11");
 }
+

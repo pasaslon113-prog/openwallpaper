@@ -4,17 +4,26 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
-    sync::Mutex,
+    sync::{atomic::AtomicBool, Mutex},
 };
 
 pub struct AppState {
     pub data: Mutex<PersistedData>,
     pub playback: Mutex<HashMap<String, MpvPlayer>>,
+    /// Active desktop surface label per monitor. Labels are staged uniquely so a new surface
+    /// can be prepared before the currently visible wallpaper is replaced.
+    pub active_surfaces: Mutex<HashMap<String, String>>,
     pub data_file: PathBuf,
     pub app_data_dir: PathBuf,
+    /// Bundled libmpv runtime directory installed with the application.
+    pub mpv_runtime_dir: PathBuf,
     pub paused: Mutex<bool>,
     pub manual_paused: Mutex<bool>,
-    pub library_scan_lock: Mutex<()>,
+    pub library_scan_lock: tokio::sync::Mutex<()>,
+    /// True when the initial library scan has either completed or failed.
+    pub library_scan_complete: AtomicBool,
+    /// Startup and restore failures retained until the UI explicitly acknowledges them.
+    pub startup_errors: Mutex<Vec<String>>,
     save_lock: Mutex<()>,
 }
 
@@ -22,26 +31,38 @@ impl AppState {
     pub fn load(app_data_dir: PathBuf) -> anyhow::Result<Self> {
         fs::create_dir_all(&app_data_dir)?;
         let data_file = app_data_dir.join("openwallpaper.json");
-        let data = if data_file.exists() {
-            let raw = fs::read_to_string(&data_file)?;
-            serde_json::from_str(&raw).map_err(|error| {
-                anyhow::anyhow!(
-                    "Не удалось прочитать настройки OpenWallpaper ({}): {}. Файл не был перезаписан. Сохраните его резервную копию и проверьте JSON.",
-                    data_file.display(),
-                    error
-                )
-            })?
+        let (data, startup_errors) = if data_file.exists() {
+            let raw = fs::read(&data_file)?;
+            match serde_json::from_slice::<PersistedData>(&raw) {
+                Ok(data) => (data, Vec::new()),
+                Err(error) => {
+                    // Preserve the original file instead of silently discarding user data.
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default().as_nanos();
+                    let backup = app_data_dir.join(format!("openwallpaper.corrupt-{timestamp}.json"));
+                    fs::copy(&data_file, &backup)?;
+                    (
+                        PersistedData::default(),
+                        vec![format!("Файл настроек повреждён. Копия сохранена: {}. Причина: {error}", backup.display())],
+                    )
+                }
+            }
         } else {
-            PersistedData::default()
+            (PersistedData::default(), Vec::new())
         };
         Ok(Self {
             data: Mutex::new(data),
             playback: Mutex::new(HashMap::new()),
+            active_surfaces: Mutex::new(HashMap::new()),
             data_file,
             app_data_dir,
+            mpv_runtime_dir: std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("resources").join("mpv-runtime"))).unwrap_or_default(),
             paused: Mutex::new(false),
             manual_paused: Mutex::new(false),
-            library_scan_lock: Mutex::new(()),
+            library_scan_lock: tokio::sync::Mutex::new(()),
+            library_scan_complete: AtomicBool::new(false),
+            startup_errors: Mutex::new(startup_errors),
             save_lock: Mutex::new(()),
         })
     }
@@ -102,23 +123,10 @@ fn replace_file(source: &std::path::Path, destination: &std::path::Path) -> anyh
     Ok(())
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::AppState;
-
-    #[test]
-    fn corrupt_settings_are_reported_instead_of_silently_reset() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("openwallpaper.json");
-        std::fs::write(&path, "{ invalid json").unwrap();
-
-        let error = match AppState::load(temp.path().to_path_buf()) {
-            Ok(_) => panic!("corrupt settings must not be silently replaced"),
-            Err(error) => error,
-        };
-        assert!(error.to_string().contains("не был перезаписан"));
-        assert_eq!(std::fs::read_to_string(path).unwrap(), "{ invalid json");
-    }
 
     #[test]
     fn settings_file_can_be_saved_and_loaded_again() {
@@ -139,5 +147,42 @@ mod tests {
         assert_eq!(data.settings.fps_limit, 60);
         assert!(loaded.data_file.is_file());
         assert!(!loaded.data_file.with_extension("json.tmp").exists());
+    }
+    #[test]
+    fn corrupt_settings_are_backed_up_and_reported() {
+        let temp = tempfile::tempdir().unwrap();
+        let data_file = temp.path().join("openwallpaper.json");
+        std::fs::write(&data_file, "{ this is not valid json").unwrap();
+
+        let loaded = AppState::load(temp.path().to_path_buf()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&data_file).unwrap(), "{ this is not valid json");
+        let backups: Vec<_> = std::fs::read_dir(temp.path()).unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("openwallpaper.corrupt-"))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert!(!loaded.startup_errors.lock().unwrap().is_empty());
+        assert_eq!(loaded.data.lock().unwrap().schema_version, 1);
+    }
+
+    #[test]
+    fn non_utf8_settings_are_backed_up_instead_of_blocking_startup() {
+        let temp = tempfile::tempdir().unwrap();
+        let data_file = temp.path().join("openwallpaper.json");
+        let corrupt = vec![0xff, 0xfe, 0x00, 0x7b];
+        std::fs::write(&data_file, &corrupt).unwrap();
+
+        let loaded = AppState::load(temp.path().to_path_buf()).unwrap();
+
+        assert_eq!(std::fs::read(&data_file).unwrap(), corrupt);
+        let backups: Vec<_> = std::fs::read_dir(temp.path()).unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("openwallpaper.corrupt-"))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert!(!loaded.startup_errors.lock().unwrap().is_empty());
     }
 }

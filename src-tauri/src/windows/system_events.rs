@@ -1,6 +1,11 @@
 use crate::{model::AppSettings, state::AppState};
-use std::{thread, time::Duration};
+use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
+
+fn monitor_topology_changed(previous: Option<&[crate::model::MonitorInfo]>, current: &[crate::model::MonitorInfo]) -> bool {
+    previous.is_some_and(|previous| previous != current)
+}
 
 pub fn spawn(app: AppHandle) {
     let initial_paused = if let Some(state) = app.try_state::<AppState>() {
@@ -12,9 +17,30 @@ pub fn spawn(app: AppHandle) {
     } else { false };
     thread::spawn(move || {
         let mut last_pause = Some(initial_paused);
+        // Seed the baseline before polling. A surface can have a different HWND
+        // parent while WebView2 is initializing; that is not an Explorer restart
+        // and must never trigger a destructive wallpaper replacement.
+        let mut last_monitors = crate::commands::monitors_for_app(&app).ok();
         loop {
             thread::sleep(Duration::from_secs(4));
             let Some(state) = app.try_state::<AppState>() else { continue; };
+            if let Ok(current_monitors) = crate::commands::monitors_for_app(&app) {
+                let monitors_changed = monitor_topology_changed(last_monitors.as_deref(), &current_monitors);
+                if monitors_changed {
+                    let previous = last_monitors.clone().unwrap_or_default();
+                    let next = current_monitors.clone();
+                    let _ = app.emit("ow:desktop-recovery", serde_json::json!({
+                        "reason": "monitor-topology-changed",
+                        "previous": previous.len(),
+                        "current": next.len(),
+                    }));
+                    let app_for_reconcile = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        crate::commands::reconcile_monitor_wallpapers(app_for_reconcile, previous, next).await;
+                    });
+                }
+                last_monitors = Some(current_monitors);
+            }
             let settings = match state.data.lock() {
                 Ok(data) => data.settings.clone(),
                 Err(_) => continue,
@@ -23,16 +49,17 @@ pub fn spawn(app: AppHandle) {
             let automatic_reason = pause_reason(&settings);
             let should_pause = manual_pause || automatic_reason.is_some();
             let reason = if manual_pause { Some("Ручная пауза".to_string()) } else { automatic_reason };
-            if last_pause == Some(should_pause) { continue; }
-            last_pause = Some(should_pause);
-            if let Ok(mut paused) = state.paused.lock() { *paused = should_pause; }
-            if let Ok(mut players) = state.playback.lock() {
-                for player in players.values_mut() { let _ = player.set_paused(should_pause); }
+            if last_pause != Some(should_pause) {
+                last_pause = Some(should_pause);
+                if let Ok(mut paused) = state.paused.lock() { *paused = should_pause; }
+                if let Ok(mut players) = state.playback.lock() {
+                    for player in players.values_mut() { let _ = player.set_paused(should_pause); }
+                }
+                for window in app.webview_windows().values() {
+                    if window.label().starts_with("wallpaper-") { let _ = window.emit("ow:pause", should_pause); }
+                }
+                let _ = app.emit("ow:pause-state", serde_json::json!({"paused": should_pause, "reason": reason}));
             }
-            for window in app.webview_windows().values() {
-                if window.label().starts_with("wallpaper-") { let _ = window.emit("ow:pause", should_pause); }
-            }
-            let _ = app.emit("ow:pause-state", serde_json::json!({"paused": should_pause, "reason": reason}));
         }
     });
 }
@@ -99,5 +126,37 @@ fn running_on_battery() -> bool {
     unsafe {
         let mut status = PowerStatus { ac_line_status: 255, battery_flag: 128, battery_percent: 255, system_status_flag: 0, battery_life_time: u32::MAX, battery_full_life_time: u32::MAX };
         GetSystemPowerStatus(&mut status) != 0 && status.ac_line_status == 0 && status.battery_flag != 128
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::monitor_topology_changed;
+    use crate::model::MonitorInfo;
+
+    fn monitor(id: &str) -> MonitorInfo {
+        MonitorInfo { id: id.into(), name: id.into(), x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: true }
+    }
+
+    #[test]
+    fn baseline_does_not_trigger_recovery() {
+        let current = vec![monitor("a")];
+        assert!(!monitor_topology_changed(None, &current));
+    }
+
+    #[test]
+    fn unchanged_topology_does_not_trigger_recovery() {
+        let previous = vec![monitor("a")];
+        let current = vec![monitor("a")];
+        assert!(!monitor_topology_changed(Some(&previous), &current));
+    }
+
+    #[test]
+    fn changed_topology_triggers_recovery() {
+        let previous = vec![monitor("a")];
+        let current = vec![monitor("b")];
+        assert!(monitor_topology_changed(Some(&previous), &current));
     }
 }

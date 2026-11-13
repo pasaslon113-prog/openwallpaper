@@ -1,12 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "wallpaper-surfaces",
-  "description": "Event listening and local asset access for wallpaper surfaces",
+  "description": "Least-privilege event access for desktop wallpaper surfaces",
   "windows": [
     "wallpaper-*"
   ],
   "permissions": [
-    "core:default",
     "core:event:default"
   ]
 }

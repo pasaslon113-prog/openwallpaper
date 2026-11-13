@@ -16,6 +16,7 @@ type MpvDestroy = unsafe extern "C" fn(*mut c_void);
 #[cfg(windows)]
 pub struct MpvPlayer {
     _library: Library,
+    _dll_directory: DllDirectoryGuard,
     handle: *mut c_void,
     command: MpvCommand,
     destroy: MpvDestroy,
@@ -26,7 +27,7 @@ unsafe impl Send for MpvPlayer {}
 
 #[cfg(windows)]
 impl MpvPlayer {
-    pub fn start(hwnd: isize, wallpaper: &RuntimeWallpaper, app_data: &Path) -> anyhow::Result<Self> {
+    pub fn start(hwnd: isize, wallpaper: &RuntimeWallpaper, app_data: &Path, mpv_runtime_dir: &Path) -> anyhow::Result<Self> {
         // Prepare fallible filesystem/string work before allocating the native mpv handle.
         let source = if wallpaper.kind == crate::model::WallpaperKind::Slideshow {
             create_slideshow_playlist(&wallpaper.path, app_data, wallpaper.slideshow_seconds)?
@@ -38,7 +39,7 @@ impl MpvPlayer {
         let pointers: Vec<*const c_char> = args.iter().map(|value| value.as_ptr())
             .chain(std::iter::once(std::ptr::null())).collect();
 
-        let library = load_mpv_library()?;
+        let (library, dll_directory) = load_mpv_library(mpv_runtime_dir)?;
         unsafe {
             let create: MpvCreate = *library.get(b"mpv_create\0")?;
             let set_option: MpvSetOptionString = *library.get(b"mpv_set_option_string\0")?;
@@ -84,14 +85,14 @@ impl MpvPlayer {
             let initialized = initialize(handle);
             if initialized < 0 {
                 destroy(handle);
-                anyhow::bail!("libmpv: ошибка инициализации (код {initialized}). Проверьте mpv-2.dll и видеодрайвер.");
+                anyhow::bail!("libmpv: ошибка инициализации (код {initialized}). Проверьте libmpv-2.dll и видеодрайвер.");
             }
             let loaded = command(handle, pointers.as_ptr());
             if loaded < 0 {
                 destroy(handle);
                 anyhow::bail!("libmpv не смог открыть выбранный файл (код {loaded})");
             }
-            Ok(Self { _library: library, handle, command, destroy })
+            Ok(Self { _library: library, _dll_directory: dll_directory, handle, command, destroy })
         }
     }
 
@@ -126,7 +127,7 @@ pub struct MpvPlayer;
 
 #[cfg(not(windows))]
 impl MpvPlayer {
-    pub fn start(_hwnd: isize, _wallpaper: &RuntimeWallpaper, _app_data: &Path) -> anyhow::Result<Self> {
+    pub fn start(_hwnd: isize, _wallpaper: &RuntimeWallpaper, _app_data: &Path, _mpv_runtime_dir: &Path) -> anyhow::Result<Self> {
         anyhow::bail!("Воспроизведение libmpv реализовано для Windows 10/11");
     }
     pub fn set_paused(&mut self, _paused: bool) -> anyhow::Result<()> { Ok(()) }
@@ -134,21 +135,95 @@ impl MpvPlayer {
 }
 
 #[cfg(windows)]
-fn load_mpv_library() -> anyhow::Result<Library> {
-    let mut candidates = Vec::new();
-    if let Ok(path) = std::env::var("OPENWALLPAPER_MPV") { candidates.push(PathBuf::from(path)); }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() { candidates.push(parent.join("mpv-2.dll")); }
+struct DllDirectoryGuard(*mut c_void);
+
+#[cfg(windows)]
+impl DllDirectoryGuard {
+    fn add(path: &Path) -> anyhow::Result<Self> {
+        use std::os::windows::ffi::OsStrExt;
+        const LOAD_LIBRARY_SEARCH_DEFAULT_DIRS: u32 = 0x00001000;
+
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn SetDefaultDllDirectories(directory_flags: u32) -> i32;
+            fn AddDllDirectory(new_directory: *const u16) -> *mut c_void;
+        }
+
+        let configured = unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) };
+        if configured == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let cookie = unsafe { AddDllDirectory(wide.as_ptr()) };
+        if cookie.is_null() {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(Self(cookie))
     }
-    candidates.push(PathBuf::from("mpv-2.dll"));
+}
+
+#[cfg(windows)]
+impl Drop for DllDirectoryGuard {
+    fn drop(&mut self) {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn RemoveDllDirectory(cookie: *mut c_void) -> i32;
+        }
+        unsafe { RemoveDllDirectory(self.0); }
+    }
+}
+
+#[cfg(windows)]
+fn load_mpv_library(mpv_runtime_dir: &Path) -> anyhow::Result<(Library, DllDirectoryGuard)> {
+    let library_names = ["libmpv-2.dll", "mpv-2.dll"];
+    let mut candidates = Vec::new();
+
+    if let Ok(configured) = std::env::var("OPENWALLPAPER_MPV") {
+        let configured = PathBuf::from(configured);
+        if configured.is_dir() {
+            for name in library_names { candidates.push(configured.join(name)); }
+        } else {
+            candidates.push(configured);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            for name in library_names {
+                candidates.push(parent.join(name));
+                candidates.push(parent.join("resources").join("mpv-runtime").join(name));
+            }
+        }
+    }
+    for name in library_names {
+        candidates.push(mpv_runtime_dir.join(name));
+        candidates.push(PathBuf::from(name));
+    }
+
     let mut errors = Vec::new();
     for candidate in candidates {
+        if !candidate.is_file() {
+            errors.push(format!("{}: файл не найден", candidate.display()));
+            continue;
+        }
+        let parent = candidate.parent().unwrap_or_else(|| Path::new("."));
+        let directory = match DllDirectoryGuard::add(parent) {
+            Ok(directory) => directory,
+            Err(error) => {
+                errors.push(format!("{}: не удалось добавить каталог DLL: {error}", candidate.display()));
+                continue;
+            }
+        };
         match unsafe { Library::new(&candidate) } {
-            Ok(lib) => return Ok(lib),
+            Ok(library) => return Ok((library, directory)),
             Err(error) => errors.push(format!("{}: {}", candidate.display(), error)),
         }
     }
-    anyhow::bail!("Не найдена mpv-2.dll. Установите официальную сборку libmpv и положите DLL рядом с OpenWallpaper.exe. {}", errors.join("; "))
+    anyhow::bail!(
+        "Не найдена или не загружается встроенная библиотека libmpv-2.dll. Переустановите OpenWallpaper или проверьте resources/mpv-runtime. {}",
+        errors.join("; ")
+    )
 }
 
 
